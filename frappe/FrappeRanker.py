@@ -1,3 +1,5 @@
+import copy
+
 import numpy
 import pandas
 import scipy
@@ -148,15 +150,21 @@ class ReliefRanker(FrappeRanker):
     Ranker using the Mutual Information Index from Scikit-Learn
     """
 
-    def __init__(self, limit_rows=2000):
+    def __init__(self, limit_rows=1000):
+        FrappeRanker.__init__(self)
         self.limit_rows = limit_rows
 
     def compute_rank(self, dataset, label):
         ranker = self.init_ranker(len(dataset.columns))
         x = dataset.to_numpy()
         if len(dataset.index) > self.limit_rows:
-            x = x[0:self.limit_rows]
-            label = label[0:self.limit_rows]
+            index = numpy.where(label == 1)[0][0]
+            if index + self.limit_rows < len(label):
+                x = x[index:index + self.limit_rows]
+                label = label[index:index + self.limit_rows]
+            else:
+                x = x[index - self.limit_rows:index]
+                label = label[index - self.limit_rows:index]
         ranker.fit(x, label)
         return ranker.feature_importances_
 
@@ -166,8 +174,8 @@ class ReliefRanker(FrappeRanker):
 
 class SURFRanker(ReliefRanker):
 
-    def __init__(self, limit_rows=2000):
-        ReliefFRanker.__init__(limit_rows)
+    def __init__(self, limit_rows=1000):
+        ReliefRanker.__init__(self, limit_rows)
 
     def init_ranker(self, n_features):
         return SURF(n_features_to_select=n_features, n_jobs=-1)
@@ -178,21 +186,21 @@ class SURFRanker(ReliefRanker):
 
 class ReliefFRanker(ReliefRanker):
 
-    def __init__(self, limit_rows=2000, n_neighbours=20):
-        ReliefFRanker.__init__(limit_rows)
+    def __init__(self, limit_rows=1000, n_neighbours=20):
+        ReliefRanker.__init__(self, limit_rows)
         self.n_neigbours = n_neighbours
 
     def init_ranker(self, n_features):
         return skrebate.ReliefF(n_neighbors=self.n_neigbours, n_features_to_select=n_features, n_jobs=-1)
 
     def get_ranker_name(self):
-        return "ReliefF"
+        return "ReliefF(" + str(self.n_neigbours) + ")"
 
 
 class SURFStarRanker(ReliefRanker):
 
-    def __init__(self, limit_rows=2000):
-        ReliefFRanker.__init__(limit_rows)
+    def __init__(self, limit_rows=1000):
+        ReliefRanker.__init__(self, limit_rows)
 
     def init_ranker(self, n_features):
         return skrebate.SURFstar(n_features_to_select=n_features, n_jobs=-1)
@@ -203,8 +211,8 @@ class SURFStarRanker(ReliefRanker):
 
 class MultiSURFRanker(ReliefRanker):
 
-    def __init__(self, limit_rows=2000):
-        ReliefFRanker.__init__(limit_rows)
+    def __init__(self, limit_rows=1000):
+        ReliefRanker.__init__(self, limit_rows)
 
     def init_ranker(self, n_features):
         return skrebate.MultiSURF(n_features_to_select=n_features, n_jobs=-1)
@@ -233,8 +241,9 @@ class WrapperRanker(FrappeRanker):
         if (not self.as_pandas) & (isinstance(dataset, pandas.DataFrame)):
             dataset = dataset.to_numpy()
         x_tr, x_te, y_tr, y_te = sklearn.model_selection.train_test_split(dataset, label, test_size=0.9)
-        self.classifier.fit(x_tr, y_tr)
-        return self.classifier.feature_importances_
+        temp_classifier = copy.deepcopy(self.classifier)
+        temp_classifier.fit(x_tr, y_tr)
+        return temp_classifier.feature_importances_
 
     def get_ranker_name(self):
         """

@@ -1,3 +1,4 @@
+import math
 import os
 import shutil
 import urllib
@@ -108,6 +109,8 @@ def load_tabular_dataset(dataset_name, label_name, limit=np.nan):
 
     # Shuffle
     df = df.sample(frac=1.0)
+    df = df.fillna(0)
+    df = df.replace('null', 0)
 
     # Testing Purposes
     if (np.isfinite(limit)) & (limit < len(df.index)):
@@ -145,6 +148,8 @@ def load_binary_tabular_dataset(dataset_name, label_name, normal_tag="normal", l
 
     # Shuffle
     df = df.sample(frac=1.0)
+    df = df.fillna(0)
+    df = df.replace('null', 0)
 
     # Testing Purposes
     if (np.isfinite(limit)) & (limit < len(df.index)):
@@ -164,6 +169,82 @@ def load_binary_tabular_dataset(dataset_name, label_name, normal_tag="normal", l
     feature_list = x_no_cat.columns
 
     return x_no_cat, y_enc, ["normal", "anomaly"], feature_list
+
+
+def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="normal", limit=np.nan):
+    """
+    Method to process an input dataset as CSV
+    :param normal_tag: tag that identifies normal data
+    :param limit: integer to cut dataset if needed.
+    :param dataset_name: name of the file (CSV) containing the dataset
+    :param label_name: name of the feature containing the label
+    :return: many values for analysis
+    """
+    # Loading Dataset
+    df = pd.read_csv(dataset_name, sep=",")
+
+    # Shuffle
+    df = df.sample(frac=1.0)
+    df = df.fillna(0)
+    df = df.replace('null', 0)
+
+    # Testing Purposes
+    if (np.isfinite(limit)) & (limit < len(df.index)):
+        df = df[0:limit]
+
+    tags = numpy.unique(df[label_name])
+
+    # Basic Pre-Processing
+    normal_frame = df.loc[df[label_name] == "normal"]
+    print("Dataset '" + dataset_name + "' loaded: " + str(len(df.index)) + " items, " + str(len(normal_frame.index)) +
+          " normal and " + str(len(tags)) + " labels")
+
+    df_no_cat = df.select_dtypes(exclude=['object'])
+    feature_list = df_no_cat.columns
+    df_no_cat[label_name] = df[label_name]
+
+    dataset_array = []
+
+    if len(tags) > 2:
+        for tag in tags:
+            if tag != normal_tag:
+                df_tag = df_no_cat.loc[df_no_cat[label_name].isin([normal_tag, tag])]
+                x = df_tag.drop(columns=[label_name])
+                y_enc = numpy.where(df_tag[label_name] == normal_tag, 0, 1)
+                dataset_array.append([x, y_enc, ["normal", "anomaly"], feature_list, tag])
+
+    dataset_array.append([df_no_cat.drop(columns=[label_name]),
+                          numpy.where(df_no_cat[label_name] == normal_tag, 0, 1),
+                          ["normal", "anomaly"], feature_list, "all"])
+
+    return dataset_array
+
+
+def load_binary_tabular_dataset_array_partition(dataset_name, label_name, n_partitions,
+                                                normal_tag="normal", limit=np.nan):
+    """
+    Method to process an input dataset as CSV
+    :param n_partitions: number of partitions for each dataset
+    :param normal_tag: tag that identifies normal data
+    :param limit: integer to cut dataset if needed.
+    :param dataset_name: name of the file (CSV) containing the dataset
+    :param label_name: name of the feature containing the label
+    :return: many values for analysis
+    """
+    # Loading DatasetArray
+    dataset_array = load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag, limit)
+
+    partition_array = []
+    for [x, y, label_names, feature_names, tag] in dataset_array:
+
+        partition_step = math.ceil(len(feature_names) / n_partitions) if len(feature_names) > n_partitions else 1
+        partitions = [feature_names[i:i + partition_step].tolist() for i in range(0, len(feature_names), partition_step)]
+
+        for i in range(0, len(partitions)):
+            partition_array.append([x[partitions[i]], y, partitions[i],
+                                    label_names, tag + "_part" + str(i)])
+
+    return dataset_array + partition_array
 
 
 def is_image_dataset(dataset_name):

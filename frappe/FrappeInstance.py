@@ -2,16 +2,17 @@ import numpy
 import pandas
 import sklearn.model_selection
 from sklearn import metrics
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from xgboost import XGBClassifier, XGBRegressor
 
 import frappe.FrappeRanker as frappe
+from utils import frappe_utils
 from utils.frappe_utils import current_ms, is_ascending
 
 
 class FrappeInstance:
 
-    def __init__(self):
+    def __init__(self) -> object:
         self.aggregators = []
         self.calculators = []
         self.dataframe = {}
@@ -19,7 +20,7 @@ class FrappeInstance:
     def add_calculator(self, calculator):
         self.calculators.append(calculator)
 
-    def add_all_calculators(self):
+    def add_statistical_calculators(self):
         self.add_calculator(frappe.RSquaredRanker())
         self.add_calculator(frappe.CosineSimilarityRanker())
         self.add_calculator(frappe.SpearmanRanker())
@@ -27,10 +28,18 @@ class FrappeInstance:
         self.add_calculator(frappe.PearsonRanker())
         self.add_calculator(frappe.MutualInfoRanker())
         self.add_calculator(frappe.ANOVARanker())
+
+    def add_relief_calculators(self):
         self.add_calculator(frappe.SURFRanker())
         self.add_calculator(frappe.ReliefFRanker(n_neighbours=10))
+        self.add_calculator(frappe.ReliefFRanker(n_neighbours=20))
+        self.add_calculator(frappe.ReliefFRanker(n_neighbours=50))
         self.add_calculator(frappe.SURFStarRanker())
         self.add_calculator(frappe.MultiSURFRanker())
+
+    def add_all_calculators(self):
+        self.add_statistical_calculators()
+        self.add_relief_calculators()
 
     def compute_ranks(self, dataset_name, dataset, label, verbose=True, store=True):
         # Compute Ranks
@@ -59,23 +68,10 @@ class FrappeInstance:
         return ranks, agg_ranks
 
     def compute_classification_score(self, dataset_name, x, y,
-                                     classifier=RandomForestClassifier(n_estimators=10),
+                                     classifiers=[RandomForestClassifier(n_estimators=10)],
                                      verbose=True, store=True):
-        metric_scores = {}
-        x_tr, x_te, y_tr, y_te = sklearn.model_selection.train_test_split(x, y, test_size=0.5)
-        start_ms = current_ms()
-        classifier.fit(x_tr, y_tr)
-        y_pred = classifier.predict(x_te)
-        metric_scores['accuracy'] = metrics.accuracy_score(y_te, y_pred)
-        metric_scores['precision'] = metrics.precision_score(y_te, y_pred)
-        metric_scores['recall'] = metrics.recall_score(y_te, y_pred)
-        metric_scores['f1'] = metrics.accuracy_score(y_te, y_pred)
-        metric_scores['f2'] = metrics.fbeta_score(y_te, y_pred, beta=2)
-        metric_scores['auc'] = metrics.roc_auc_score(y_te, y_pred)
-        metric_scores['mcc'] = metrics.matthews_corrcoef(y_te, y_pred)
-        if verbose:
-            print("Classifier train/val in " + str(current_ms() - start_ms) + " ms with accuracy " +
-                  str(metric_scores['accuracy']))
+
+        metric_scores = frappe_utils.classification_analysis(x, y, classifiers, verbose)
         if store:
             self.update_dataframe_scores(metric_scores, dataset_name)
         return metric_scores
@@ -104,3 +100,9 @@ class FrappeInstance:
     def print_csv(self, file_name):
         if self.dataframe is not None:
             self.dataframe.to_csv(file_name, index=False)
+
+    def regression_analysis(self, target_metric, verbose=True):
+        return frappe_utils.regression_analysis(df=self.dataframe, label_tag=target_metric,
+                                                regressors=[RandomForestRegressor(),
+                                                            XGBRegressor()],
+                                                verbose=verbose)
