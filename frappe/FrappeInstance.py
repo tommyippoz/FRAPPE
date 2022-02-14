@@ -3,6 +3,7 @@ import pandas
 import sklearn.model_selection
 from sklearn import metrics
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, LassoLars, LogisticRegression, BayesianRidge
 from xgboost import XGBClassifier, XGBRegressor
 
 import frappe.FrappeRanker as frappe
@@ -46,8 +47,11 @@ class FrappeInstance:
         ranks = {}
         for calculator in self.calculators:
             start_ms = current_ms()
-            ranks[calculator.get_ranker_name()] = \
-                pandas.Series(data=calculator.compute_rank(dataset, label), index=dataset.columns)
+            try:
+                calc_rank = calculator.compute_rank(dataset, label)
+            except:
+                calc_rank = numpy.zeros(len(dataset.columns))
+            ranks[calculator.get_ranker_name()] = pandas.Series(data=calc_rank, index=dataset.columns)
             if verbose:
                 print(calculator.get_ranker_name() + " calculated in " + str(current_ms() - start_ms) + " ms")
 
@@ -103,6 +107,11 @@ class FrappeInstance:
 
     def regression_analysis(self, target_metric, verbose=True):
         return frappe_utils.regression_analysis(df=self.dataframe, label_tag=target_metric,
-                                                regressors=[RandomForestRegressor(),
+                                                regressors=[LinearRegression(),
+                                                            Ridge(),
+                                                            Lasso(),
+                                                            LassoLars(),
+                                                            BayesianRidge(),
+                                                            RandomForestRegressor(),
                                                             XGBRegressor()],
                                                 verbose=verbose)

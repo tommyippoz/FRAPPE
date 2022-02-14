@@ -201,7 +201,8 @@ def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="norm
 
     df_no_cat = df.select_dtypes(exclude=['object'])
     feature_list = df_no_cat.columns
-    df_no_cat[label_name] = df[label_name]
+    df_no_cat.loc[:, label_name] = df[label_name]
+    # df_no_cat[label_name] = df[label_name]
 
     dataset_array = []
 

@@ -16,17 +16,16 @@ from utils.AutoGluonClassifier import FastAI
 from utils.dataset_utils import load_binary_tabular_dataset, load_binary_tabular_dataset_array, \
     load_binary_tabular_dataset_array_partition
 
-INPUT_FOLDER = "G:/My Drive/Datasets_CriticalSystems/scikit"
+INPUT_FOLDER = "input_folder"
 OUTPUT_FOLDER = "output_folder"
 
 LABEL_NAME = "multilabel"
-OUTPUT_FILE = "all_calc.csv"
+OUTPUT_FILE = "all_calc_sup.csv"
 
 
 def get_supervised_classifiers():
     return [GaussianNB(),
             BernoulliNB(),
-            RandomForestClassifier(n_estimators=10),
             XGBClassifier(use_label_encoder=False, eval_metric="logloss"),
             LinearDiscriminantAnalysis(),
             ExtraTreesClassifier(n_estimators=10)]
@@ -34,13 +33,16 @@ def get_supervised_classifiers():
 
 if __name__ == '__main__':
 
+    pandas.set_option('mode.chained_assignment', None)
+
     frappe = FrappeInstance()
 
-    # frappe.add_all_calculators()
-    frappe.add_calculator(fr.RSquaredRanker())
-    # frappe.add_calculator(fr.ReliefFRanker(limit_rows=2000))
-    # frappe.add_calculator(fr.SURFRanker(limit_rows=200))
-    # frappe.add_calculator(fr.MultiSURFRanker())
+    frappe.add_statistical_calculators()
+    frappe.add_calculator(fr.ReliefFRanker(n_neighbours=10, limit_rows=2000))
+    frappe.add_calculator(fr.SURFRanker(limit_rows=2000))
+    frappe.add_calculator(fr.MultiSURFRanker(limit_rows=2000))
+    frappe.add_calculator(fr.WrapperRanker(RandomForestClassifier(n_estimators=10)))
+    frappe.add_calculator(fr.WrapperRanker(FastAI(label_name=LABEL_NAME)))
 
     frappe.add_aggregator(GetBest())
     frappe.add_aggregator(GetAverageBest(n=3))
@@ -63,7 +65,7 @@ if __name__ == '__main__':
 
             ranks, agg_ranks = frappe.compute_ranks(dataset_name + "@" + tag, x, y, store=True)
             frappe.compute_classification_score(dataset_name + "@" + tag, x, y, store=True,
-                                                classifiers=[GaussianNB()])
+                                                classifiers=get_supervised_classifiers())
 
     frappe.print_csv(OUTPUT_FOLDER + "/" + OUTPUT_FILE)
 

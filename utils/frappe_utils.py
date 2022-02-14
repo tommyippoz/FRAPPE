@@ -2,6 +2,7 @@ import os
 import time
 from os.path import isdir
 
+import numpy
 import sklearn
 import smogn
 from sklearn import metrics
@@ -52,6 +53,8 @@ def classification_analysis(x, y, classifiers, verbose=True):
         if verbose:
             print("Classifier " + classifier.__class__.__name__ + " train/val in " + str(current_ms() - start_ms) +
                   " ms with MCC of " + str(mcc))
+    a = numpy.unique(best_result[1])
+    has_single = len(numpy.unique(best_result[1])) == 1
     tn, fp, fn, tp = metrics.confusion_matrix(y_te, best_result[1]).ravel()
     metric_scores = {'tp': tp,
                      'tn': tn,
@@ -60,10 +63,10 @@ def classification_analysis(x, y, classifiers, verbose=True):
                      'accuracy': metrics.accuracy_score(y_te, best_result[1]),
                      'precision': metrics.precision_score(y_te, best_result[1]),
                      'recall': metrics.recall_score(y_te, best_result[1]),
-                     'f1': metrics.accuracy_score(y_te, best_result[1]),
-                     'f2': metrics.fbeta_score(y_te, best_result[1], beta=2),
-                     'auc': metrics.roc_auc_score(y_te, best_result[1]),
-                     'mcc': metrics.matthews_corrcoef(y_te, best_result[1])}
+                     'f1': metrics.accuracy_score(y_te, best_result[1]) if not has_single else 0.0,
+                     'f2': metrics.fbeta_score(y_te, best_result[1], beta=2) if not has_single else 0.0,
+                     'auc': metrics.roc_auc_score(y_te, best_result[1]) if not has_single else 0.0,
+                     'mcc': metrics.matthews_corrcoef(y_te, best_result[1]) if not has_single else 0.0}
     if verbose:
         print("Best classifier gets MCC of " + str(metric_scores['mcc'])
               + " and accuracy of " + str(metric_scores['accuracy']))
@@ -116,5 +119,7 @@ def clear_regression_dataframe(reg_df, target_metric="mcc"):
     my_df = reg_df.drop(columns=["dataset_name"])
     my_df = my_df.drop(columns=USED_METRICS)
     my_df[target_metric] = y
+    for column in my_df.columns:
+        my_df[column] = my_df[column].astype(float)
     return my_df
 
