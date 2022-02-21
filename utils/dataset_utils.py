@@ -168,7 +168,7 @@ def load_binary_tabular_dataset(dataset_name, label_name, normal_tag="normal", l
     x_no_cat = x.select_dtypes(exclude=['object'])
     feature_list = x_no_cat.columns
 
-    return x_no_cat, y_enc, ["normal", "anomaly"], feature_list
+    return [[x_no_cat, y_enc, ["normal", "anomaly"], feature_list, (y_enc == 1).sum() / len(y_enc), "full"]]
 
 
 def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="normal", limit=np.nan):
@@ -212,7 +212,8 @@ def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="norm
                 df_tag = df_no_cat.loc[df_no_cat[label_name].isin([normal_tag, tag])]
                 x = df_tag.drop(columns=[label_name])
                 y_enc = numpy.where(df_tag[label_name] == normal_tag, 0, 1)
-                dataset_array.append([x, y_enc, ["normal", "anomaly"], feature_list, tag])
+                an_perc = (y_enc == 1).sum() / len(y_enc)
+                dataset_array.append([x, y_enc, ["normal", "anomaly"], feature_list, an_perc, tag])
 
     dataset_array.append([df_no_cat.drop(columns=[label_name]),
                           numpy.where(df_no_cat[label_name] == normal_tag, 0, 1),
@@ -236,14 +237,14 @@ def load_binary_tabular_dataset_array_partition(dataset_name, label_name, n_part
     dataset_array = load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag, limit)
 
     partition_array = []
-    for [x, y, label_names, feature_names, tag] in dataset_array:
+    for [x, y, label_names, feature_names, an_perc, tag] in dataset_array:
 
         partition_step = math.ceil(len(feature_names) / n_partitions) if len(feature_names) > n_partitions else 1
         partitions = [feature_names[i:i + partition_step].tolist() for i in range(0, len(feature_names), partition_step)]
 
         for i in range(0, len(partitions)):
             partition_array.append([x[partitions[i]], y, partitions[i],
-                                    label_names, tag + "_part" + str(i)])
+                                    label_names, an_perc, tag + "_part" + str(i)])
 
     return dataset_array + partition_array
 
