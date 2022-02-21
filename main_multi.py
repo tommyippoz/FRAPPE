@@ -16,11 +16,11 @@ from utils.AutoGluonClassifier import FastAI
 from utils.dataset_utils import load_binary_tabular_dataset, load_binary_tabular_dataset_array, \
     load_binary_tabular_dataset_array_partition
 
-INPUT_FOLDER = "input_folder"
+INPUT_FOLDER = "input_folder/test"
 OUTPUT_FOLDER = "output_folder"
 
 LABEL_NAME = "multilabel"
-OUTPUT_FILE = "all_calc_sup.csv"
+OUTPUT_FILE = "nids_calc_sup.csv"
 
 
 def get_supervised_classifiers():
@@ -33,7 +33,7 @@ def get_supervised_classifiers():
 
 if __name__ == '__main__':
 
-    pandas.set_option('mode.chained_assignment', None)
+    pandas.set_option('mode.chained_assignment', 'warn')
 
     frappe = FrappeInstance()
 
@@ -60,8 +60,10 @@ if __name__ == '__main__':
         dataset_array = load_binary_tabular_dataset_array_partition(file_name, LABEL_NAME, 5)
         dataset_name = os.path.basename(file_name).replace(".csv", "")
 
-        for [x, y, feature_names, label_names, tag] in tqdm(dataset_array, desc="Variants Progress"):
+        for [df, x, y, feature_names, label_names, tag] in tqdm(dataset_array, desc="Variants Progress"):
             print("\nProcessing tag " + tag + " of dataset " + dataset_name)
+
+            # df.to_csv(OUTPUT_FOLDER + "/partition_dataset/" + dataset_name + "@" + tag + ".csv", index=False)
 
             ranks, agg_ranks = frappe.compute_ranks(dataset_name + "@" + tag, x, y, store=True)
             frappe.compute_classification_score(dataset_name + "@" + tag, x, y, store=True,
