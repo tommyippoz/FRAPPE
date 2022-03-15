@@ -2,8 +2,11 @@ import numpy
 import pandas
 import sklearn.model_selection
 from sklearn import metrics
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, AdaBoostRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression, Ridge, Lasso, LassoLars, LogisticRegression, BayesianRidge
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.svm import SVR, LinearSVR
+from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBClassifier, XGBRegressor
 
 import frappe.FrappeRanker as frappe
@@ -49,7 +52,8 @@ class FrappeInstance:
             start_ms = current_ms()
             try:
                 calc_rank = calculator.compute_rank(dataset, label)
-            except:
+            except Exception as e:
+                print(e)
                 calc_rank = numpy.zeros(len(dataset.columns))
             ranks[calculator.get_ranker_name()] = pandas.Series(data=calc_rank, index=dataset.columns)
             if verbose:
@@ -105,13 +109,16 @@ class FrappeInstance:
         if self.dataframe is not None:
             self.dataframe.to_csv(file_name, index=False)
 
-    def regression_analysis(self, target_metric, verbose=True):
-        return frappe_utils.regression_analysis(df=self.dataframe, label_tag=target_metric,
-                                                regressors=[LinearRegression(),
-                                                            Ridge(),
-                                                            Lasso(),
-                                                            LassoLars(),
-                                                            BayesianRidge(),
-                                                            RandomForestRegressor(),
-                                                            XGBRegressor()],
-                                                verbose=verbose)
+    def regression_analysis(self, target_metric, train_split=0.66, select_features=None, data_augmentation=False, verbose=True):
+        return frappe_utils.regression_analysis(start_df=self.dataframe, label_tag=target_metric, train_split=train_split,
+                                                regressors=[RandomForestRegressor(n_estimators=10),
+                                                            RandomForestRegressor(n_estimators=100),
+                                                            XGBRegressor(n_estimators=10),
+                                                            XGBRegressor(n_estimators=100),
+                                                            XGBRegressor(n_estimators=500)],
+                                                select_features=select_features,
+                                                verbose=verbose,
+                                                data_augmentation=data_augmentation)
+
+    def load_dataframe(self, df):
+        self.dataframe = df

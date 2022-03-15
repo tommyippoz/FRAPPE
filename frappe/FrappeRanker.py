@@ -6,6 +6,11 @@ import scipy
 import sklearn
 import sklearn.feature_selection as fs
 import skrebate
+from genetic_selection import GeneticSelectionCV
+from sklearn import linear_model
+from sklearn.ensemble import RandomForestClassifier
+from sklearn_genetic import GASearchCV, GAFeatureSelectionCV
+from sklearn_genetic.space import Integer, Categorical, Continuous
 from skrebate import SURF
 
 
@@ -252,4 +257,35 @@ class WrapperRanker(FrappeRanker):
         return "Wrap(" + str(self.classifier.__class__.__name__) + ")"
 
 
+class GeneticRanker(FrappeRanker):
+    """
+    Ranker that calculates rank using genetic algorithm
+    """
+
+    def __init__(self, as_pandas=False):
+        FrappeRanker.__init__(self)
+        self.as_pandas = as_pandas
+
+    def compute_rank(self, dataset, label):
+        """
+        Computes the Rank w.r.t. the label for each feature in the dataset
+        :param dataset: the input dataset containing features
+        :param label: label to calculate rank against
+        :return: double value
+        """
+        if (not self.as_pandas) & (isinstance(dataset, pandas.DataFrame)):
+            dataset = dataset.to_numpy()
+
+        estimators = RandomForestClassifier()
+        selectors = GeneticSelectionCV(estimators, scoring='accuracy', n_population=2, n_generations=2, n_jobs=1)
+        selectors = selectors.fit(dataset, label)
+
+        a = selectors.support_
+        return a
+
+    def get_ranker_name(self):
+        """
+        Returns the name of the ranker (string)
+        """
+        return "GeneticAlgorithm"
 
