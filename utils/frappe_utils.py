@@ -3,9 +3,12 @@ import time
 from os.path import isdir
 
 import numpy
+import pandas
 import sklearn
 import smogn
 from sklearn import metrics
+from sklearn.feature_selection import SelectKBest, mutual_info_regression
+from sklearn.model_selection import cross_val_score
 
 USED_METRICS = ["tp", "tn", "fp", "fn", "accuracy", "precision", "recall", "f1", "f2", "auc", "mcc"]
 
@@ -74,20 +77,31 @@ def classification_analysis(x, y, classifiers, verbose=True):
     return metric_scores
 
 
-def regression_analysis(df, label_tag, regressors, verbose=True, data_augmentation=False):
+def get_feature_importances(algorithm):
+    if hasattr(algorithm, 'feature_importances_'):
+        return algorithm.feature_importances_
+    elif  hasattr(algorithm, 'coef_'):
+        return algorithm.coef_
+    else:
+        return 0
 
-    df = clear_regression_dataframe(reg_df=df, target_metric=label_tag)
+
+def regression_analysis(start_df, label_tag, train_split, regressors, select_features=None, verbose=True, data_augmentation=False):
+
+    df = clear_regression_dataframe(reg_df=start_df, target_metric=label_tag, select_features=select_features)
 
     x_tr, x_te, y_tr, y_te = sklearn.model_selection.train_test_split(
-        df.drop(columns=[label_tag]), df[label_tag], test_size=0.33)
+        df.drop(columns=[label_tag]), df[label_tag], test_size=1-train_split)
 
     if data_augmentation:
         train_df = x_tr.copy()
         train_df[label_tag] = y_tr
-        train_smogn = smogn.smoter(data=train_df, y=label_tag)
+        train_df.reset_index(inplace=True, drop=True)
+        print("Data Augmentation with SMOTER")
+        train_smogn = smogn.smoter(data=train_df, y=label_tag, rel_coef=0.2)
         if verbose:
-            print("Data Augmentation performed: from " + str(len(train_df.index)) + " to "
-                  + str(len(train_smogn.index)) + " train rows.")
+            print("Data Augmentation performed: generated " + str(len(train_smogn.index)) + " additional train rows.")
+        train_smogn = pandas.concat([train_smogn, train_df])
         y_tr = train_smogn[label_tag]
         x_tr = train_smogn.drop(columns=[label_tag])
 
@@ -98,10 +112,11 @@ def regression_analysis(df, label_tag, regressors, verbose=True, data_augmentati
         y_pred = regressor.predict(x_te)
         mae = metrics.mean_absolute_error(y_te, y_pred)
         if mae < best_result[0]:
-            best_result = [mae, y_pred]
+            imp = get_feature_importances(regressor)
+            best_result = [mae, y_pred, dict(zip(x_te.columns, imp))]
         if verbose:
             print("Regressor " + regressor.__class__.__name__ + " train/val in " + str(current_ms() - start_ms) +
-                  " ms with mean absolute error of " + str(mae))
+                  " ms with mean absolute error of " + str(mae) + " and R2 of " + str(metrics.r2_score(y_te, y_pred)))
     metric_scores = {'exp_var': metrics.explained_variance_score(y_te, best_result[1]),
                      'max_err': metrics.max_error(y_te, best_result[1]),
                      'mean_abs_err': metrics.mean_absolute_error(y_te, best_result[1]),
@@ -111,13 +126,23 @@ def regression_analysis(df, label_tag, regressors, verbose=True, data_augmentati
         print("Best regressor gets Mean Absolute Error of " + str(metric_scores['mean_abs_err'])
               + " and R2 of " + str(metric_scores['r2']))
 
-    return metric_scores, x_te, y_te, best_result[1]
+    x_te = pandas.concat([x_te, start_df], axis=1, join="inner")
+    x_te = x_te.loc[:, ~x_te.columns.duplicated()]
+
+    return metric_scores, dict(sorted(best_result[2].items(), key=lambda item: item[1], reverse=True)), x_te, y_te, best_result[1]
 
 
-def clear_regression_dataframe(reg_df, target_metric="mcc"):
+def clear_regression_dataframe(reg_df, target_metric="mcc", select_features=None):
     y = reg_df[target_metric]
     my_df = reg_df.drop(columns=["dataset_name"])
     my_df = my_df.drop(columns=USED_METRICS)
+    if select_features is not None:
+        if isinstance(select_features, int):
+            kbest = SelectKBest(mutual_info_regression, k=int(select_features))
+        else:
+            kbest = SelectKBest(mutual_info_regression, k=10)
+        kbest.fit_transform(my_df, y)
+        my_df = my_df.iloc[:, kbest.get_support()]
     my_df[target_metric] = y
     for column in my_df.columns:
         my_df[column] = my_df[column].astype(float)
