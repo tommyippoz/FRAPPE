@@ -289,3 +289,33 @@ class GeneticRanker(FrappeRanker):
         """
         return "GeneticAlgorithm"
 
+class CoefRanker(FrappeRanker):
+    """
+    Ranker that wraps classifiers and gets feature_importance
+    """
+
+    def __init__(self, classifier, as_pandas=False):
+        FrappeRanker.__init__(self)
+        self.classifier = classifier
+        self.as_pandas = as_pandas
+
+    def compute_rank(self, dataset, label):
+        """
+        Computes the Rank w.r.t. the label for each feature in the dataset
+        :param dataset: the input dataset containing features
+        :param label: label to calculate rank against
+        :return: double value
+        """
+        if (not self.as_pandas) & (isinstance(dataset, pandas.DataFrame)):
+            dataset = dataset.to_numpy()
+        x_tr, x_te, y_tr, y_te = sklearn.model_selection.train_test_split(dataset, label, test_size=0.5)
+        temp_classifier = copy.deepcopy(self.classifier)
+        temp_classifier.fit(x_tr, y_tr)
+        return temp_classifier.coef_
+
+    def get_ranker_name(self):
+        """
+        Returns the name of the ranker (string)
+        """
+        return "Wrap(" + str(self.classifier.__class__.__name__) + ")"
+
