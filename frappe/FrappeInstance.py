@@ -48,6 +48,7 @@ class FrappeInstance:
     def compute_ranks(self, dataset_name, dataset, label, verbose=True, store=True):
         # Compute Ranks
         ranks = {}
+        timings = {}
         for calculator in self.calculators:
             start_ms = current_ms()
             try:
@@ -56,6 +57,7 @@ class FrappeInstance:
                 print(e)
                 calc_rank = numpy.zeros(len(dataset.columns))
             ranks[calculator.get_ranker_name()] = pandas.Series(data=calc_rank, index=dataset.columns)
+            timings[calculator.get_ranker_name()] = (current_ms() - start_ms)/(len(dataset.index)/2)
             if verbose:
                 print(calculator.get_ranker_name() + " calculated in " + str(current_ms() - start_ms) + " ms")
 
@@ -73,7 +75,7 @@ class FrappeInstance:
             print(str(len(self.aggregators)) + " aggregators calculated in " + str(current_ms() - start_ms) + " ms")
         if store:
             self.update_dataframe(agg_ranks, dataset_name)
-        return ranks, agg_ranks
+        return ranks, agg_ranks, timings
 
     def compute_classification_score(self, dataset_name, x, y,
                                      classifiers=[RandomForestClassifier(n_estimators=10)],
