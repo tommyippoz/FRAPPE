@@ -168,7 +168,7 @@ def load_binary_tabular_dataset(dataset_name, label_name, normal_tag="normal", l
     x_no_cat = x.select_dtypes(exclude=['object'])
     feature_list = x_no_cat.columns
 
-    return [[x_no_cat, y_enc, ["normal", "anomaly"], feature_list, (y_enc == 1).sum() / len(y_enc), "full"]]
+    return [[x_no_cat, y_enc, feature_list, ["normal", "anomaly"], (y_enc == 1).sum() / len(y_enc), "full"]]
 
 
 def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="normal", limit=np.nan):
@@ -180,6 +180,8 @@ def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="norm
     :param label_name: name of the feature containing the label
     :return: many values for analysis
     """
+    pd.set_option('mode.chained_assignment', None)
+
     # Loading Dataset
     df = pd.read_csv(dataset_name, sep=",")
 
@@ -215,9 +217,9 @@ def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="norm
                 an_perc = (y_enc == 1).sum() / len(y_enc)
                 dataset_array.append([x, y_enc, ["normal", "anomaly"], feature_list, an_perc, tag])
 
-    dataset_array.append([df_no_cat.drop(columns=[label_name]),
-                          numpy.where(df_no_cat[label_name] == normal_tag, 0, 1),
-                          ["normal", "anomaly"], feature_list, "all"])
+    y_enc = numpy.where(df_no_cat[label_name] == normal_tag, 0, 1)
+    dataset_array.append([df_no_cat.drop(columns=[label_name]), y_enc,
+                          ["normal", "anomaly"], feature_list, (y_enc == 1).sum() / len(y_enc), "all"])
 
     return dataset_array
 
@@ -323,3 +325,4 @@ def format_mnist(mnist_folder, limit, as_pandas):
                pd.DataFrame(data=y_te, columns=['label']), labels, feature_list
     else:
         return x_tr, x_te, y_tr, y_te, labels, feature_list
+

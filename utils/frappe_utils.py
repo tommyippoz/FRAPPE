@@ -113,7 +113,7 @@ def regression_analysis(start_df, label_tag, train_split, regressors, select_fea
         mae = metrics.mean_absolute_error(y_te, y_pred)
         if mae < best_result[0]:
             imp = get_feature_importances(regressor)
-            best_result = [mae, y_pred, dict(zip(x_te.columns, imp))]
+            best_result = [mae, y_pred, dict(zip(x_te.columns, imp)), regressor]
         if verbose:
             print("Regressor " + regressor.__class__.__name__ + " train/val in " + str(current_ms() - start_ms) +
                   " ms with mean absolute error of " + str(mae) + " and R2 of " + str(metrics.r2_score(y_te, y_pred)))
@@ -129,7 +129,7 @@ def regression_analysis(start_df, label_tag, train_split, regressors, select_fea
     x_te = pandas.concat([x_te, start_df], axis=1, join="inner")
     x_te = x_te.loc[:, ~x_te.columns.duplicated()]
 
-    return metric_scores, dict(sorted(best_result[2].items(), key=lambda item: item[1], reverse=True)), x_te, y_te, best_result[1]
+    return best_result[3], [metric_scores, dict(sorted(best_result[2].items(), key=lambda item: item[1], reverse=True)), x_te, y_te, best_result[1]]
 
 
 def clear_regression_dataframe(reg_df, target_metric="mcc", select_features=None):

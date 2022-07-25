@@ -104,7 +104,7 @@ if __name__ == '__main__':
 
             ranks, agg_ranks = frappe.compute_ranks(dataset_name + "@" + tag, x, y, store=True)
             frappe.compute_classification_score(dataset_name + "@" + tag, x, y, store=True,
-                                                classifiers=get_unsupervised_classifiers(outliers_fraction=an_perc))
+                                                classifiers=[COPOD(contamination=an_perc)])
 
     frappe.print_csv(OUTPUT_FOLDER + "/" + OUTPUT_FILE)
 

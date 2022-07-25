@@ -10,16 +10,65 @@ from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBClassifier, XGBRegressor
 
 import frappe.FrappeRanker as frappe
+from frappe.FrappeAggregator import GetAverageBest, GetAverage, GetSum, GetBest
 from utils import frappe_utils
+from utils.AutoGluonClassifier import FastAI
 from utils.frappe_utils import current_ms, is_ascending
+
+from joblib import dump, load
 
 
 class FrappeInstance:
 
-    def __init__(self) -> object:
+    def __init__(self, load_models=True, rankers_set="full") -> object:
         self.aggregators = []
         self.calculators = []
         self.dataframe = {}
+        self.regressors = {}
+        for ad_type in ["SUP", "UNSUP"]:
+            self.regressors[ad_type] = {}
+        if load_models:
+            for ad_type in ["SUP", "UNSUP"]:
+                for metric in ["mcc", "auc"]:
+                    if rankers_set is "full":
+                        self.load_regression_model(metric, ad_type,
+                                                   "models/" + ad_type + "_" + metric + "_model.joblib")
+                    else:
+                        self.load_regression_model(metric, ad_type,
+                                                   "models/" + ad_type + "_" + metric + "_red_model.joblib")
+
+        if rankers_set is "full":
+            self.add_default_calculators()
+        else:
+            self.add_reduced_calculators()
+        self.add_default_aggregators()
+
+    def add_default_aggregators(self):
+        self.add_aggregator(GetBest())
+        self.add_aggregator(GetAverageBest(n=3))
+        self.add_aggregator(GetAverageBest(n=5))
+        self.add_aggregator(GetAverageBest(n=10))
+        self.add_aggregator(GetAverage())
+        self.add_aggregator(GetSum())
+
+    def add_default_calculators(self):
+        self.add_statistical_calculators()
+        self.add_calculator(frappe.ReliefFRanker(n_neighbours=10, limit_rows=2000))
+        self.add_calculator(frappe.SURFRanker(limit_rows=2000))
+        self.add_calculator(frappe.MultiSURFRanker(limit_rows=2000))
+        self.add_calculator(frappe.CoefRanker(LinearRegression()))
+        self.add_calculator(frappe.WrapperRanker(RandomForestClassifier(n_estimators=10)))
+        self.add_calculator(frappe.WrapperRanker(FastAI(label_name="multilabel")))
+
+    def add_reduced_calculators(self):
+        self.add_calculator(frappe.RSquaredRanker())
+        self.add_calculator(frappe.SpearmanRanker())
+        self.add_calculator(frappe.ChiSquaredRanker())
+        self.add_calculator(frappe.PearsonRanker())
+        self.add_calculator(frappe.MutualInfoRanker())
+        self.add_calculator(frappe.ReliefFRanker(n_neighbours=10, limit_rows=2000))
+        self.add_calculator(frappe.WrapperRanker(RandomForestClassifier(n_estimators=10)))
+        self.add_calculator(frappe.WrapperRanker(FastAI(label_name="multilabel")))
 
     def add_calculator(self, calculator):
         self.calculators.append(calculator)
@@ -57,7 +106,7 @@ class FrappeInstance:
                 print(e)
                 calc_rank = numpy.zeros(len(dataset.columns))
             ranks[calculator.get_ranker_name()] = pandas.Series(data=calc_rank, index=dataset.columns)
-            timings[calculator.get_ranker_name()] = (current_ms() - start_ms)/(len(dataset.index)/2)
+            timings[calculator.get_ranker_name()] = (current_ms() - start_ms)
             if verbose:
                 print(calculator.get_ranker_name() + " calculated in " + str(current_ms() - start_ms) + " ms")
 
@@ -99,7 +148,6 @@ class FrappeInstance:
                 tag = dict_tag + "_" + item_tag
                 self.dataframe.loc[self.dataframe.dataset_name == dataset_name, tag] = agg_ranks[dict_tag][item_tag]
 
-
     def update_dataframe_scores(self, metric_scores, dataset_name):
         if not isinstance(self.dataframe, pandas.DataFrame):
             tag_list = ["dataset_name"] + [k for k in metric_scores]
@@ -111,16 +159,36 @@ class FrappeInstance:
         if self.dataframe is not None:
             self.dataframe.to_csv(file_name, index=False)
 
-    def regression_analysis(self, target_metric, train_split=0.66, select_features=None, data_augmentation=False, verbose=True):
-        return frappe_utils.regression_analysis(start_df=self.dataframe, label_tag=target_metric, train_split=train_split,
-                                                regressors=[RandomForestRegressor(n_estimators=10),
-                                                            RandomForestRegressor(n_estimators=100),
-                                                            XGBRegressor(n_estimators=10),
-                                                            XGBRegressor(n_estimators=100),
-                                                            XGBRegressor(n_estimators=500)],
-                                                select_features=select_features,
-                                                verbose=verbose,
-                                                data_augmentation=data_augmentation)
+    def regression_analysis(self, target_metric, ad_type, train_split=0.66, select_features=None, data_augmentation=False, verbose=True):
+        model, return_array = frappe_utils.regression_analysis(start_df=self.dataframe, label_tag=target_metric,
+                                                               train_split=train_split,
+                                                               regressors=[RandomForestRegressor(n_estimators=10),
+                                                                           RandomForestRegressor(n_estimators=100),
+                                                                           XGBRegressor(n_estimators=10),
+                                                                           XGBRegressor(n_estimators=100),
+                                                                           XGBRegressor(n_estimators=500)],
+                                                               select_features=select_features,
+                                                               verbose=verbose,
+                                                               data_augmentation=data_augmentation)
+        self.regressors[ad_type][target_metric] = model
+        return return_array
 
     def load_dataframe(self, df):
         self.dataframe = df
+
+    def load_regression_model(self, metric, ad_type, model_path):
+        self.regressors[ad_type][metric] = load(model_path)
+
+    def save_regression_model(self, metric, ad_type, model_path):
+        dump(self.regressors[ad_type][metric], model_path)
+
+    def predict_metric(self, metric, ad_type, x, y):
+        start_ms = current_ms()
+        ranks, agg_ranks, timings = self.compute_ranks(dataset_name=None, dataset=x, label=y, store=False)
+        middle_ms = current_ms()
+        model = self.regressors[ad_type][metric]
+        data = numpy.asarray([d[x] for d in agg_ranks.values() for x in d.keys()])
+        data[numpy.isnan(data)] = 0
+        pred_metric = model.predict(data.reshape(1, -1))[0]
+
+        return pred_metric, middle_ms - start_ms, current_ms() - middle_ms, data
