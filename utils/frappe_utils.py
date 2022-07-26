@@ -7,6 +7,7 @@ import pandas
 import sklearn
 import smogn
 from pyod.models.abod import ABOD
+from pyod.models.cblof import CBLOF
 from pyod.models.copod import COPOD
 from pyod.models.hbos import HBOS
 from pyod.models.iforest import IForest
@@ -222,8 +223,10 @@ def get_supervised_classifiers():
 
 
 def get_unsupervised_classifiers(outliers_fraction):
+    outliers_fraction = outliers_fraction if outliers_fraction < 0.5 else 0.5
     return [COPOD(contamination=outliers_fraction),
             IForest(contamination=outliers_fraction),
+            CBLOF(contamination=outliers_fraction),
             ABOD(contamination=outliers_fraction, method='fast'),
             GridSearchCV(estimator=ABOD(contamination=outliers_fraction, method='fast'), scoring='roc_auc',
                          param_grid={'n_neighbors': [1, 3, 5]}),
