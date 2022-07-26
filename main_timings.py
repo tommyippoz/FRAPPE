@@ -112,7 +112,7 @@ if __name__ == '__main__':
             ranks, agg_ranks, timings = frappe.compute_ranks(dataset_name + "@" + tag, x, y, store=True)
             start_ms = current_ms()
             classifiers = get_supervised_classifiers()
-            frappe.compute_classification_score(dataset_name + "@" + tag, x, y, store=True,
+            compute_classification_score(dataset_name + "@" + tag, x, y, store=True,
                                                 classifiers=[DecisionTreeClassifier()])
             timings["Avg Classifier Time"] = (current_ms() - start_ms)/len(classifiers)
             timings["# Classifiers"] = len(classifiers)

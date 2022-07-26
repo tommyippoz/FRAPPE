@@ -103,7 +103,7 @@ if __name__ == '__main__':
             print("\nProcessing tag " + tag + " of dataset " + dataset_name)
 
             ranks, agg_ranks = frappe.compute_ranks(dataset_name + "@" + tag, x, y, store=True)
-            frappe.compute_classification_score(dataset_name + "@" + tag, x, y, store=True,
+            compute_classification_score(dataset_name + "@" + tag, x, y, store=True,
                                                 classifiers=[COPOD(contamination=an_perc)])
 
     frappe.print_csv(OUTPUT_FOLDER + "/" + OUTPUT_FILE)

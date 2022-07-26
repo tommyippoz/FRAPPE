@@ -6,9 +6,19 @@ import numpy
 import pandas
 import sklearn
 import smogn
+from pyod.models.abod import ABOD
+from pyod.models.copod import COPOD
+from pyod.models.hbos import HBOS
+from pyod.models.iforest import IForest
+from pyod.models.mcd import MCD
+from pyod.models.pca import PCA
 from sklearn import metrics
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from sklearn.feature_selection import SelectKBest, mutual_info_regression
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.naive_bayes import GaussianNB, BernoulliNB
+from xgboost import XGBClassifier
 
 USED_METRICS = ["tp", "tn", "fp", "fn", "accuracy", "precision", "recall", "f1", "f2", "auc", "mcc"]
 
@@ -36,6 +46,20 @@ def get_dataset_files(folder, partial_list=[]):
         elif isdir(full_name):
             partial_list = get_dataset_files(full_name, partial_list)
     return partial_list
+
+
+def compute_classification_score(dataset_name, x, y,
+                                 classifiers=[RandomForestClassifier(n_estimators=10)],
+                                 metrics_df=None,
+                                 verbose=True):
+    metric_scores = classification_analysis(x, y, classifiers, verbose)
+    if not isinstance(metrics_df, pandas.DataFrame):
+        tag_list = ["dataset_name"] + [k for k in metric_scores]
+        metrics_df = pandas.DataFrame(columns=tag_list)
+    metrics_df.loc[len(metrics_df), "dataset_name"] = dataset_name
+    for metric in metric_scores:
+        metrics_df.loc[metrics_df.dataset_name == dataset_name, metric] = metric_scores[metric]
+    return metrics_df, metric_scores
 
 
 def classification_analysis(x, y, classifiers, verbose=True):
@@ -148,3 +172,64 @@ def clear_regression_dataframe(reg_df, target_metric="mcc", select_features=None
         my_df[column] = my_df[column].astype(float)
     return my_df
 
+
+def write_dict(dict_obj, filename, header=None):
+    with open(filename, 'w') as f:
+        if header is not None:
+            f.write("%s\n" % header)
+        write_rec_dict(f, dict_obj, "")
+
+
+def write_rec_dict(out_f, dict_obj, prequel):
+    if (type(dict_obj) is dict) or issubclass(type(dict_obj), dict):
+        for key in dict_obj.keys():
+            if (type(dict_obj[key]) is dict) or issubclass(type(dict_obj[key]), dict):
+                if len(dict_obj[key]) > 10:
+                    for inner in dict_obj[key].keys():
+                        if (prequel is None) or (len(prequel) == 0):
+                            out_f.write("%s,%s,%s\n" % (key, inner, dict_obj[key][inner]))
+                        else:
+                            out_f.write("%s,%s,%s,%s\n" % (prequel, key, inner, dict_obj[key][inner]))
+                else:
+                    prequel = prequel + "," + str(key) if (prequel is not None) and (len(prequel) > 0) else str(key)
+                    write_rec_dict(out_f, dict_obj[key], prequel)
+            elif type(dict_obj[key]) is list:
+                item_count = 1
+                for item in dict_obj[key]:
+                    new_prequel = prequel + "," + str(key) + ",item" + str(item_count) \
+                        if (prequel is not None) and (len(prequel) > 0) else str(key) + ",item" + str(item_count)
+                    write_rec_dict(out_f, item, new_prequel)
+                    item_count += 1
+            else:
+                if (prequel is None) or (len(prequel) == 0):
+                    out_f.write("%s,%s\n" % (key, dict_obj[key]))
+                else:
+                    out_f.write("%s,%s,%s\n" % (prequel, key, dict_obj[key]))
+    else:
+        if (prequel is None) or (len(prequel) == 0):
+            out_f.write("%s\n" % dict_obj)
+        else:
+            out_f.write("%s,%s\n" % (prequel, dict_obj))
+
+
+def get_supervised_classifiers():
+    return [GaussianNB(),
+            BernoulliNB(),
+            XGBClassifier(use_label_encoder=False, eval_metric="logloss"),
+            LinearDiscriminantAnalysis(),
+            ExtraTreesClassifier(n_estimators=10),
+            RandomForestClassifier(n_estimators=100)]
+
+
+def get_unsupervised_classifiers(outliers_fraction):
+    return [COPOD(contamination=outliers_fraction),
+            IForest(contamination=outliers_fraction),
+            ABOD(contamination=outliers_fraction, method='fast'),
+            GridSearchCV(estimator=ABOD(contamination=outliers_fraction, method='fast'), scoring='roc_auc',
+                         param_grid={'n_neighbors': [1, 3, 5]}),
+            GridSearchCV(estimator=HBOS(contamination=outliers_fraction), scoring='roc_auc',
+                         param_grid={'n_bins': [5, 10, 20, 50, 100, 200], 'tol': [0.2, 0.5, 0.8]}),
+            GridSearchCV(estimator=MCD(contamination=outliers_fraction), scoring='roc_auc',
+                         param_grid={'support_fraction': [None, 0.1, 0.3, 0.5]}),
+            GridSearchCV(estimator=PCA(contamination=outliers_fraction), scoring='roc_auc',
+                         param_grid={'weighted': [False, True]})]

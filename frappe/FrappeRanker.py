@@ -7,10 +7,7 @@ import sklearn
 import sklearn.feature_selection as fs
 import skrebate
 from genetic_selection import GeneticSelectionCV
-from sklearn import linear_model
 from sklearn.ensemble import RandomForestClassifier
-from sklearn_genetic import GASearchCV, GAFeatureSelectionCV
-from sklearn_genetic.space import Integer, Categorical, Continuous
 from skrebate import SURF
 
 

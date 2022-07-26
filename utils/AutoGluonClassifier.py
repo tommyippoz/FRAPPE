@@ -19,7 +19,7 @@ class AutoGluonClassifier:
     """
 
     def __init__(self, label_name, clf_name, metric):
-        self.model = TabularPredictor(label=label_name, eval_metric=metric)
+        self.model = TabularPredictor(label=label_name, eval_metric=metric, verbosity=0)
         self.label_name = label_name
         self.feature_names = []
         self.clf_name = clf_name

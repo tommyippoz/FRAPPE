@@ -1,47 +1,64 @@
+import os
+
 import numpy
 import pandas
-import sklearn.model_selection
-from sklearn import metrics
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, AdaBoostRegressor, GradientBoostingRegressor
-from sklearn.linear_model import LinearRegression, Ridge, Lasso, LassoLars, LogisticRegression, BayesianRidge
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.svm import SVR, LinearSVR
-from sklearn.tree import DecisionTreeRegressor
-from xgboost import XGBClassifier, XGBRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from xgboost import XGBRegressor
 
-import frappe.FrappeRanker as frappe
+import frappe.FrappeRanker as franker
 from frappe.FrappeAggregator import GetAverageBest, GetAverage, GetSum, GetBest
+from frappe.FrappeType import FrappeType
 from utils import frappe_utils
 from utils.AutoGluonClassifier import FastAI
-from utils.frappe_utils import current_ms, is_ascending
+from utils.frappe_utils import current_ms, is_ascending, write_dict
 
 from joblib import dump, load
 
 
 class FrappeInstance:
 
-    def __init__(self, load_models=True, rankers_set="full") -> object:
+    def __init__(self, load_models=True, instance=FrappeType.REGULAR,
+                 models_folder="models/", custom_rankers=None) -> object:
+        self.instance_type = instance
         self.aggregators = []
         self.calculators = []
-        self.dataframe = {}
-        self.regressors = {}
-        for ad_type in ["SUP", "UNSUP"]:
-            self.regressors[ad_type] = {}
+        self.models_folder = models_folder
+        self.regressors = {"SUP": {}, "UNS": {}}
         if load_models:
-            for ad_type in ["SUP", "UNSUP"]:
-                for metric in ["mcc", "auc"]:
-                    if rankers_set is "full":
-                        self.load_regression_model(metric, ad_type,
-                                                   "models/" + ad_type + "_" + metric + "_model.joblib")
-                    else:
-                        self.load_regression_model(metric, ad_type,
-                                                   "models/" + ad_type + "_" + metric + "_red_model.joblib")
-
-        if rankers_set is "full":
-            self.add_default_calculators()
-        else:
+            self.load_models()
+        if self.instance_type is FrappeType.FULL:
+            self.add_all_calculators()
+        elif self.instance_type is FrappeType.REGULAR:
             self.add_reduced_calculators()
+        elif self.instance_type is FrappeType.FAST:
+            self.add_fast_calculators()
+        elif self.instance_type is FrappeType.CUSTOM:
+            [self.add_calculator(ranker) for ranker in custom_rankers]
         self.add_default_aggregators()
+
+    def get_model_file(self, ad_type, metric) -> object:
+        model_file = self.models_folder
+        if self.instance_type is FrappeType.FULL:
+            model_file += "full/"
+        elif self.instance_type is FrappeType.REGULAR:
+            model_file += "regular/"
+        elif self.instance_type is FrappeType.FAST:
+            model_file += "fast/"
+        elif self.instance_type is FrappeType.CUSTOM:
+            model_file += "custom/"
+        model_file += str(ad_type) + "_" + str(metric) + "_model.joblib"
+        return model_file
+
+    def load_models(self):
+        for ad_type in list(self.regressors.keys()):
+            for metric in ["mcc", "auc"]:
+                model_file = self.get_model_file(ad_type, metric)
+                if os.path.exists(model_file):
+                    self.regressors[ad_type][metric] = load(model_file)
+                    print("Loaded model for " + str(self.instance_type) + "/" + str(ad_type))
+                else:
+                    print("Unable to locate model for " + str(self.instance_type) + "/" + str(ad_type))
 
     def add_default_aggregators(self):
         self.add_aggregator(GetBest())
@@ -53,87 +70,101 @@ class FrappeInstance:
 
     def add_default_calculators(self):
         self.add_statistical_calculators()
-        self.add_calculator(frappe.ReliefFRanker(n_neighbours=10, limit_rows=2000))
-        self.add_calculator(frappe.SURFRanker(limit_rows=2000))
-        self.add_calculator(frappe.MultiSURFRanker(limit_rows=2000))
-        self.add_calculator(frappe.CoefRanker(LinearRegression()))
-        self.add_calculator(frappe.WrapperRanker(RandomForestClassifier(n_estimators=10)))
-        self.add_calculator(frappe.WrapperRanker(FastAI(label_name="multilabel")))
+        self.add_calculator(franker.ReliefFRanker(n_neighbours=10, limit_rows=2000))
+        self.add_calculator(franker.SURFRanker(limit_rows=2000))
+        self.add_calculator(franker.MultiSURFRanker(limit_rows=2000))
+        self.add_calculator(franker.CoefRanker(LinearRegression()))
+        self.add_calculator(franker.WrapperRanker(RandomForestClassifier(n_estimators=10)))
+        self.add_calculator(franker.WrapperRanker(FastAI(label_name="multilabel", )))
 
     def add_reduced_calculators(self):
-        self.add_calculator(frappe.RSquaredRanker())
-        self.add_calculator(frappe.SpearmanRanker())
-        self.add_calculator(frappe.ChiSquaredRanker())
-        self.add_calculator(frappe.PearsonRanker())
-        self.add_calculator(frappe.MutualInfoRanker())
-        self.add_calculator(frappe.ReliefFRanker(n_neighbours=10, limit_rows=2000))
-        self.add_calculator(frappe.WrapperRanker(RandomForestClassifier(n_estimators=10)))
-        self.add_calculator(frappe.WrapperRanker(FastAI(label_name="multilabel")))
+        self.add_calculator(franker.RSquaredRanker())
+        self.add_calculator(franker.SpearmanRanker())
+        self.add_calculator(franker.ChiSquaredRanker())
+        self.add_calculator(franker.PearsonRanker())
+        self.add_calculator(franker.MutualInfoRanker())
+        self.add_calculator(franker.ReliefFRanker(n_neighbours=10, limit_rows=2000))
+        self.add_calculator(franker.WrapperRanker(RandomForestClassifier(n_estimators=10)))
+        self.add_calculator(franker.WrapperRanker(FastAI(label_name="multilabel")))
+
+    def add_fast_calculators(self):
+        self.add_calculator(franker.RSquaredRanker())
+        self.add_calculator(franker.SpearmanRanker())
+        self.add_calculator(franker.ChiSquaredRanker())
+        self.add_calculator(franker.PearsonRanker())
+        self.add_calculator(franker.WrapperRanker(RandomForestClassifier(n_estimators=10)))
 
     def add_calculator(self, calculator):
         self.calculators.append(calculator)
 
     def add_statistical_calculators(self):
-        self.add_calculator(frappe.RSquaredRanker())
-        self.add_calculator(frappe.CosineSimilarityRanker())
-        self.add_calculator(frappe.SpearmanRanker())
-        self.add_calculator(frappe.ChiSquaredRanker())
-        self.add_calculator(frappe.PearsonRanker())
-        self.add_calculator(frappe.MutualInfoRanker())
-        self.add_calculator(frappe.ANOVARanker())
+        self.add_calculator(franker.RSquaredRanker())
+        self.add_calculator(franker.CosineSimilarityRanker())
+        self.add_calculator(franker.SpearmanRanker())
+        self.add_calculator(franker.ChiSquaredRanker())
+        self.add_calculator(franker.PearsonRanker())
+        self.add_calculator(franker.MutualInfoRanker())
+        self.add_calculator(franker.ANOVARanker())
 
     def add_relief_calculators(self):
-        self.add_calculator(frappe.SURFRanker())
-        self.add_calculator(frappe.ReliefFRanker(n_neighbours=10))
-        self.add_calculator(frappe.ReliefFRanker(n_neighbours=20))
-        self.add_calculator(frappe.ReliefFRanker(n_neighbours=50))
-        self.add_calculator(frappe.SURFStarRanker())
-        self.add_calculator(frappe.MultiSURFRanker())
+        self.add_calculator(franker.SURFRanker())
+        self.add_calculator(franker.ReliefFRanker(n_neighbours=10))
+        self.add_calculator(franker.ReliefFRanker(n_neighbours=20))
+        self.add_calculator(franker.ReliefFRanker(n_neighbours=50))
+        self.add_calculator(franker.SURFStarRanker())
+        self.add_calculator(franker.MultiSURFRanker())
 
     def add_all_calculators(self):
         self.add_statistical_calculators()
         self.add_relief_calculators()
 
-    def compute_ranks(self, dataset_name, dataset, label, verbose=True, store=True):
+    def compute_ranks(self, dataset_name, dataset_x, dataset_y, ranks_df=None, verbose=True):
+
+        if ranks_df is None:
+            # Init DataFrame
+            tag_list = ["dataset_name"] + [k.get_ranker_name() + "_" + j.get_name()
+                                           for k in self.calculators for j in self.aggregators]
+            ranks_df = pandas.DataFrame(columns=tag_list)
+
         # Compute Ranks
+        ranks, timings = self.compute_dataset_ranks(dataset_x, dataset_y)
+        ranks_df.loc[len(ranks_df), "dataset_name"] = dataset_name
+        for dict_tag in ranks:
+            for item_tag in list(ranks[dict_tag]):
+                tag = dict_tag + "_" + item_tag
+                ranks_df.loc[ranks_df.dataset_name == dataset_name, tag] = \
+                    ranks[dict_tag][item_tag]
+
+        return ranks_df
+
+    def compute_dataset_ranks(self, dataset, label, verbose=True):
+
         ranks = {}
         timings = {}
         for calculator in self.calculators:
+
+            # Compute Ranks
             start_ms = current_ms()
             try:
                 calc_rank = calculator.compute_rank(dataset, label)
             except Exception as e:
                 print(e)
                 calc_rank = numpy.zeros(len(dataset.columns))
-            ranks[calculator.get_ranker_name()] = pandas.Series(data=calc_rank, index=dataset.columns)
+            calc_rank = pandas.Series(data=calc_rank, index=dataset.columns)
             timings[calculator.get_ranker_name()] = (current_ms() - start_ms)
+
+            # Aggregate
+            is_asc = is_ascending(calculator.get_ranker_name())
+            agg_dict = {}
+            for aggregator in self.aggregators:
+                agg_dict[aggregator.get_name()] = \
+                    aggregator.calculate_aggregation(calc_rank, ascending=is_asc)
+            ranks[calculator.get_ranker_name()] = agg_dict
+
             if verbose:
                 print(calculator.get_ranker_name() + " calculated in " + str(current_ms() - start_ms) + " ms")
 
-        # Aggregate Ranks
-        agg_ranks = {}
-        start_ms = current_ms()
-        for calc_key in ranks.keys():
-            agg_dict = {}
-            is_asc = is_ascending(calc_key)
-            rank_list = ranks[calc_key]
-            for aggregator in self.aggregators:
-                agg_dict[aggregator.get_name()] = aggregator.calculate_aggregation(rank_list, ascending=is_asc)
-            agg_ranks[calc_key] = agg_dict
-        if verbose:
-            print(str(len(self.aggregators)) + " aggregators calculated in " + str(current_ms() - start_ms) + " ms")
-        if store:
-            self.update_dataframe(agg_ranks, dataset_name)
-        return ranks, agg_ranks, timings
-
-    def compute_classification_score(self, dataset_name, x, y,
-                                     classifiers=[RandomForestClassifier(n_estimators=10)],
-                                     verbose=True, store=True):
-
-        metric_scores = frappe_utils.classification_analysis(x, y, classifiers, verbose)
-        if store:
-            self.update_dataframe_scores(metric_scores, dataset_name)
-        return metric_scores
+        return ranks, timings
 
     def add_aggregator(self, aggregator):
         self.aggregators.append(aggregator)
@@ -159,28 +190,41 @@ class FrappeInstance:
         if self.dataframe is not None:
             self.dataframe.to_csv(file_name, index=False)
 
-    def regression_analysis(self, target_metric, ad_type, train_split=0.66, select_features=None, data_augmentation=False, verbose=True):
-        model, return_array = frappe_utils.regression_analysis(start_df=self.dataframe, label_tag=target_metric,
-                                                               train_split=train_split,
-                                                               regressors=[RandomForestRegressor(n_estimators=10),
-                                                                           RandomForestRegressor(n_estimators=100),
-                                                                           XGBRegressor(n_estimators=10),
-                                                                           XGBRegressor(n_estimators=100),
-                                                                           XGBRegressor(n_estimators=500)],
-                                                               select_features=select_features,
-                                                               verbose=verbose,
-                                                               data_augmentation=data_augmentation)
-        self.regressors[ad_type][target_metric] = model
-        return return_array
+    def learn_models(self, ranks_df, train_split=0.66,
+                     select_features=None, data_augmentation=False, verbose=True):
+        # Storing dataset of rankings
+        ranks_df.to_csv(self.models_folder + "ranks_dataframe.csv", index=False)
 
-    def load_dataframe(self, df):
-        self.dataframe = df
+        # Learning Models
+        for ad_type in list(self.regressors.keys()):
+            for metric in ["mcc", "auc"]:
+                model, return_array = \
+                    frappe_utils.regression_analysis(start_df=ranks_df, label_tag=metric,
+                                                     train_split=train_split,
+                                                     regressors=[RandomForestRegressor(n_estimators=10),
+                                                                 RandomForestRegressor(n_estimators=100),
+                                                                 XGBRegressor(n_estimators=10),
+                                                                 XGBRegressor(n_estimators=100),
+                                                                 XGBRegressor(n_estimators=500)],
+                                                     select_features=select_features,
+                                                     verbose=verbose,
+                                                     data_augmentation=data_augmentation)
+                self.regressors[ad_type][metric] = model
+                print("Model Learned for")
 
-    def load_regression_model(self, metric, ad_type, model_path):
-        self.regressors[ad_type][metric] = load(model_path)
+                # Storing Model
+                model_file = self.get_model_file(ad_type, metric)
+                dump(self.regressors[ad_type][metric], model_file)
 
-    def save_regression_model(self, metric, ad_type, model_path):
-        dump(self.regressors[ad_type][metric], model_path)
+                # Storing Additional Data
+                additional_dict = {
+                    "model_name": model.__class__.__name__,
+                    "mae": return_array[0],
+                    "importances": return_array[2],
+                    "calculators": len(self.calculators),
+                    "aggregators": len(self.aggregators)}
+                write_dict(additional_dict, model_file.replace(".joblib", "_info.csv"),
+                           "additional info for regressor in FRAPPE")
 
     def predict_metric(self, metric, ad_type, x, y):
         start_ms = current_ms()

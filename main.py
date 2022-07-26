@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
         dataset_name = os.path.basename(file_name).replace(".csv", "")
         ranks, agg_ranks = frappe.compute_ranks(dataset_name, x, y, store=True)
-        frappe.compute_classification_score(dataset_name, x, y, store=True,
+        compute_classification_score(dataset_name, x, y, store=True,
                                             classifiers=[GaussianNB(),
                                                          BernoulliNB(),
                                                          RandomForestClassifier(n_estimators=10),
