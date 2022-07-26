@@ -40,13 +40,15 @@ class FrappeInstance:
     def get_model_file(self, ad_type, metric) -> object:
         model_file = self.models_folder
         if self.instance_type is FrappeType.FULL:
-            model_file += "full/"
+            model_file += "/full/"
         elif self.instance_type is FrappeType.REGULAR:
-            model_file += "regular/"
+            model_file += "/regular/"
         elif self.instance_type is FrappeType.FAST:
-            model_file += "fast/"
+            model_file += "/fast/"
         elif self.instance_type is FrappeType.CUSTOM:
-            model_file += "custom/"
+            model_file += "/custom/"
+        if not os.path.exists(model_file):
+            os.mkdir(model_file)
         model_file += str(ad_type) + "_" + str(metric) + "_model.joblib"
         return model_file
 
@@ -190,41 +192,35 @@ class FrappeInstance:
         if self.dataframe is not None:
             self.dataframe.to_csv(file_name, index=False)
 
-    def learn_models(self, ranks_df, train_split=0.66,
+    def learn_models(self, ranks_df, ad_type, train_split=0.66,
                      select_features=None, data_augmentation=False, verbose=True):
-        # Storing dataset of rankings
-        ranks_df.to_csv(self.models_folder + "ranks_dataframe.csv", index=False)
 
         # Learning Models
-        for ad_type in list(self.regressors.keys()):
-            for metric in ["mcc", "auc"]:
-                model, return_array = \
-                    frappe_utils.regression_analysis(start_df=ranks_df, label_tag=metric,
-                                                     train_split=train_split,
-                                                     regressors=[RandomForestRegressor(n_estimators=10),
-                                                                 RandomForestRegressor(n_estimators=100),
-                                                                 XGBRegressor(n_estimators=10),
-                                                                 XGBRegressor(n_estimators=100),
-                                                                 XGBRegressor(n_estimators=500)],
-                                                     select_features=select_features,
-                                                     verbose=verbose,
-                                                     data_augmentation=data_augmentation)
-                self.regressors[ad_type][metric] = model
-                print("Model Learned for")
+        for metric in ["mcc", "auc"]:
+            model, return_array = \
+                frappe_utils.regression_analysis(start_df=ranks_df, label_tag=metric,
+                                                 train_split=train_split,
+                                                 regressors=[RandomForestRegressor(n_estimators=10),
+                                                             RandomForestRegressor(n_estimators=100)],
+                                                 select_features=select_features,
+                                                 verbose=verbose,
+                                                 data_augmentation=data_augmentation)
+            self.regressors[ad_type][metric] = model
+            print("Model Learned for " + metric + " type: " + ad_type)
 
-                # Storing Model
-                model_file = self.get_model_file(ad_type, metric)
-                dump(self.regressors[ad_type][metric], model_file)
+            # Storing Model
+            model_file = self.get_model_file(ad_type, metric)
+            dump(self.regressors[ad_type][metric], model_file)
 
-                # Storing Additional Data
-                additional_dict = {
-                    "model_name": model.__class__.__name__,
-                    "mae": return_array[0],
-                    "importances": return_array[2],
-                    "calculators": len(self.calculators),
-                    "aggregators": len(self.aggregators)}
-                write_dict(additional_dict, model_file.replace(".joblib", "_info.csv"),
-                           "additional info for regressor in FRAPPE")
+            # Storing Additional Data
+            additional_dict = {
+                "model_name": model.__class__.__name__,
+                "mae": return_array[0],
+                "importances": return_array[2],
+                "calculators": len(self.calculators),
+                "aggregators": len(self.aggregators)}
+            write_dict(additional_dict, model_file.replace(".joblib", "_info.csv"),
+                       "additional info for regressor in FRAPPE")
 
     def predict_metric(self, metric, ad_type, x, y):
         start_ms = current_ms()

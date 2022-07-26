@@ -69,19 +69,21 @@ def classification_analysis(x, y, classifiers, verbose=True):
 
     best_result = [-1, []]
     for classifier in classifiers:
-        start_ms = current_ms()
-        classifier.fit(x_tr, y_tr)
-        y_pred = classifier.predict(x_te)
-        mcc = metrics.matthews_corrcoef(y_te, y_pred)
-        if mcc < 0:
-            mcc = - mcc
-            y_pred = 1 - y_pred
-        if mcc > best_result[0]:
-            best_result = [mcc, y_pred]
-        if verbose:
-            print("Classifier " + classifier.__class__.__name__ + " train/val in " + str(current_ms() - start_ms) +
-                  " ms with MCC of " + str(mcc))
-    a = numpy.unique(best_result[1])
+        try:
+            start_ms = current_ms()
+            classifier.fit(x_tr, y_tr)
+            y_pred = classifier.predict(x_te)
+            mcc = metrics.matthews_corrcoef(y_te, y_pred)
+            if mcc < 0:
+                mcc = - mcc
+                y_pred = 1 - y_pred
+            if mcc > best_result[0]:
+                best_result = [mcc, y_pred]
+            if verbose:
+                print("Classifier " + classifier.__class__.__name__ + " train/val in " + str(current_ms() - start_ms) +
+                      " ms with MCC of " + str(mcc))
+        except:
+            print("Classifier " + classifier.__class__.__name__ + " FAILED")
     has_single = len(numpy.unique(best_result[1])) == 1
     tn, fp, fn, tp = metrics.confusion_matrix(y_te, best_result[1]).ravel()
     metric_scores = {'tp': tp,
