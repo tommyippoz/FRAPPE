@@ -1,6 +1,4 @@
 import os
-import pandas
-from tqdm import tqdm
 
 from frappe.FrappeInstance import FrappeInstance
 from frappe.FrappeType import FrappeType
