@@ -104,6 +104,44 @@ def classification_analysis(x, y, classifiers, verbose=True):
     return metric_scores
 
 
+def exercise_classifier(x, y, classifier, train_split=0.5, verbose=True):
+
+    x_tr, x_te, y_tr, y_te = sklearn.model_selection.train_test_split(x, y, test_size=(1-train_split))
+
+    try:
+        start_ms = current_ms()
+        classifier.fit(x_tr, y_tr)
+        y_pred = classifier.predict(x_te)
+        mcc = metrics.matthews_corrcoef(y_te, y_pred)
+        if mcc < 0:
+            mcc = - mcc
+            y_pred = 1 - y_pred
+        if verbose:
+            print("Classifier " + classifier.__class__.__name__ + " train/val in " + str(current_ms() - start_ms) +
+                  " ms with MCC of " + str(mcc))
+    except:
+        print("Classifier " + classifier.__class__.__name__ + " FAILED")
+
+    has_single = len(numpy.unique(y_pred)) == 1
+    tn, fp, fn, tp = metrics.confusion_matrix(y_te, y_pred).ravel()
+    metric_scores = {'tp': tp,
+                     'tn': tn,
+                     'fp': fp,
+                     'fn': fn,
+                     'accuracy': metrics.accuracy_score(y_te, y_pred),
+                     'precision': metrics.precision_score(y_te, y_pred),
+                     'recall': metrics.recall_score(y_te, y_pred),
+                     'f1': metrics.accuracy_score(y_te, y_pred) if not has_single else 0.0,
+                     'f2': metrics.fbeta_score(y_te, y_pred, beta=2) if not has_single else 0.0,
+                     'auc': metrics.roc_auc_score(y_te, y_pred) if not has_single else 0.0,
+                     'mcc': metrics.matthews_corrcoef(y_te, y_pred) if not has_single else 0.0}
+    if verbose:
+        print("Best classifier gets MCC of " + str(metric_scores['mcc'])
+              + " and accuracy of " + str(metric_scores['accuracy']))
+
+    return metric_scores
+
+
 def get_feature_importances(algorithm):
     if hasattr(algorithm, 'feature_importances_'):
         return algorithm.feature_importances_

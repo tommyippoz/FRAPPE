@@ -168,7 +168,7 @@ def load_binary_tabular_dataset(dataset_name, label_name, normal_tag="normal", l
     x_no_cat = x.select_dtypes(exclude=['object'])
     feature_list = x_no_cat.columns
 
-    return [[x_no_cat, y_enc, feature_list, ["normal", "anomaly"], (y_enc == 1).sum() / len(y_enc), "full"]]
+    return [x_no_cat, y_enc, feature_list, ["normal", "anomaly"], (y_enc == 1).sum() / len(y_enc), "full"]
 
 
 def load_binary_tabular_dataset_array(dataset_name, label_name, normal_tag="normal", limit=np.nan):
