@@ -5,8 +5,10 @@ from frappe.FrappeType import FrappeType
 from utils.dataset_utils import load_binary_tabular_dataset
 
 MODELS_FOLDER = "../models"
-DATASET_FILE = "../input/NSLKDD_Shuffled.csv"
-OUTPUT_FOLDER = "../output"
+DATASET_FILE = "../input_folder/NIDS/ADFANet_Meta.csv"
+OUTPUT_FOLDER = "../output_folder"
+AD_TYPE = "UNS"
+METRIC = "mcc"
 
 if __name__ == '__main__':
 
@@ -22,11 +24,12 @@ if __name__ == '__main__':
     print("\nSelecting features of dataset " + dataset_name)
 
     # Selecting minimum amount of features
-    feature_list = fr_obj.select_features(dataset_x=x, dataset_y=y,
-                                          feature_names=feature_names,
-                                          max_drop=0.1,
-                                          ad_type="SUP", metric="mcc",
-                                          train_split=0.66, verbose=True)
+    feature_list, overall_df = fr_obj.select_features(dataset_name=dataset_name,
+                                                      dataset_x=x, dataset_y=y,
+                                                      feature_names=feature_names,
+                                                      max_drop=0.1,
+                                                      ad_type=AD_TYPE, metric=METRIC,
+                                                      train_split=0.66, verbose=True)
 
     with open(OUTPUT_FOLDER + "/select_features_" + dataset_name + ".csv", 'w') as f:
         f.write("pred_met,true_met,features\n")

@@ -8,8 +8,8 @@ from utils import frappe_utils
 from utils.dataset_utils import load_binary_tabular_dataset_array_partition
 
 MODELS_FOLDER = "../models"
-INPUT_FOLDER = "../input"
-OUTPUT_FOLDER = "../dataframes"
+INPUT_FOLDER = "../input_folder"
+OUTPUT_FOLDER = "../output_folder"
 
 
 def build_ranks_scores():
@@ -22,7 +22,7 @@ def build_ranks_scores():
         print("\n------------------------------------------------------\n")
 
         dataset_array = load_binary_tabular_dataset_array_partition(file_name, label_name="multilabel",
-                                                                    n_partitions=5, limit=1000)
+                                                                    n_partitions=5)
         dataset_name = os.path.basename(file_name).replace(".csv", "")
 
         for [x, y, feature_names, label_names, an_perc, tag] in tqdm(dataset_array, desc="Variants Progress"):
@@ -44,7 +44,7 @@ def build_ranks_scores():
         print("\n------------------------------------------------------\n")
 
         dataset_array = load_binary_tabular_dataset_array_partition(file_name, label_name="multilabel",
-                                                                    n_partitions=5, limit=1000)
+                                                                    n_partitions=5)
         dataset_name = os.path.basename(file_name).replace(".csv", "")
 
         for [x, y, feature_names, label_names, an_perc, tag] in tqdm(dataset_array, desc="Variants Progress"):
@@ -71,7 +71,7 @@ def build_ranks_scores():
         print("\n------------------------------------------------------\n")
 
         dataset_array = load_binary_tabular_dataset_array_partition(file_name, label_name="multilabel",
-                                                                    n_partitions=5, limit=1000)
+                                                                    n_partitions=5)
         dataset_name = os.path.basename(file_name).replace(".csv", "")
 
         for [x, y, feature_names, label_names, an_perc, tag] in tqdm(dataset_array, desc="Variants Progress"):
@@ -109,11 +109,13 @@ if __name__ == '__main__':
         os.mkdir(OUTPUT_FOLDER)
 
     # Supervised Ranks
+    sup_ranks = None
     sup_ranks_file = OUTPUT_FOLDER + "/sup_ranks.csv"
     if os.path.exists(sup_ranks_file):
         sup_ranks = pandas.read_csv(sup_ranks_file)
 
     # Unsupervised Ranks
+    uns_ranks = None
     uns_ranks_file = OUTPUT_FOLDER + "/uns_ranks.csv"
     if os.path.exists(uns_ranks_file):
         uns_ranks = pandas.read_csv(uns_ranks_file)
@@ -122,9 +124,9 @@ if __name__ == '__main__':
         sup_ranks, uns_ranks = build_ranks_scores()
 
     # Learning Models for SUPERVISED
-    fr_obj.learn_models(sup_ranks, ad_type="SUP", train_split=0.66,
+    fr_obj.learn_models(sup_ranks, ad_type="SUP", train_split=0.8,
                         select_features=None, data_augmentation=False, verbose=True)
 
     # Learning Models for UNSUPERVISED
-    fr_obj.learn_models(uns_ranks, ad_type="UNS", train_split=0.66,
+    fr_obj.learn_models(uns_ranks, ad_type="UNS", train_split=0.8,
                         select_features=None, data_augmentation=False, verbose=True)

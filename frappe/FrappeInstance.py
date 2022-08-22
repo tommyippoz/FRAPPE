@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 import numpy
@@ -244,12 +245,16 @@ class FrappeInstance:
             write_dict(additional_dict, model_file.replace(".joblib", "_info.csv"),
                        "additional info for regressor in FRAPPE")
 
-    def predict_metric(self, metric, ad_type, x, y, compute_true=False, verbose=False):
+    def predict_metric(self, metric, ad_type, x, y, compute_true="no", verbose=False):
 
         # Compute True Value
-        if compute_true:
-            classifiers = frappe_utils.get_supervised_classifiers() \
-                if ad_type == "SUP" else frappe_utils.get_unsupervised_classifiers()
+        if compute_true is not "no":
+            if compute_true is "full":
+                classifiers = frappe_utils.get_supervised_classifiers() \
+                    if ad_type == "SUP" else frappe_utils.get_unsupervised_classifiers(outliers_fraction=0.5)
+            else:
+                classifiers = frappe_utils.get_fast_supervised_classifiers() \
+                    if ad_type == "SUP" else frappe_utils.get_fast_unsupervised_classifiers(outliers_fraction=0.5)
             metrics_df, m_scores = \
                 frappe_utils.compute_classification_score(dataset_name="dataset_tag",
                                                           x=x, y=y, metrics_df=None,
@@ -268,11 +273,11 @@ class FrappeInstance:
 
         return pred_metric, middle_ms - start_ms, current_ms() - middle_ms, data, true_metric
 
-    def select_features(self, dataset_x, dataset_y, feature_names, max_drop,
+    def select_features(self, dataset_name, dataset_x, dataset_y, feature_names, max_drop,
                         ad_type="SUP", metric="mcc", train_split=0.5, verbose=False):
 
         met_max, t1, t2, data_row, met_calc = self.predict_metric(metric, ad_type, dataset_x, dataset_y,
-                                                                  compute_true=True, verbose=False)
+                                                                  compute_true="fast", verbose=False)
         met_threshold = met_max * (1 - max_drop)
 
         if verbose:
@@ -290,6 +295,7 @@ class FrappeInstance:
         model = self.regressors[ad_type][metric]
 
         # Iterating through features
+        overall_df = None
         best_pred = met_threshold
         current_feature_set = numpy.asarray(feature_names)
         feature_sets_list = [{"features": current_feature_set, "pred": met_max, "true": met_calc}]
@@ -299,22 +305,26 @@ class FrappeInstance:
             if verbose:
                 print("Iteration using " + str(len(current_feature_set)) + " features")
 
-            out_list, best_pred, f_to_remove = \
-                self.rec_select_features(model, dataset_x, dataset_y,
-                                         current_feature_set, ranks_raw,
-                                         ad_type, metric, train_split)
+            out_list, best_pred, f_to_remove, pred_df = \
+                self.rec_select_features(model, dataset_name, dataset_x, dataset_y,
+                                         current_feature_set, ranks_raw, ad_type, metric, train_split)
             feature_sets_list.extend(out_list)
             if f_to_remove is not None:
                 current_feature_set = current_feature_set[current_feature_set != f_to_remove]
+            if overall_df is None:
+                overall_df = pred_df
+            else:
+                overall_df.append(pred_df)
 
         print("Process ended selecting features " + ",".join(f for f in current_feature_set))
-        return feature_sets_list
+        return feature_sets_list, overall_df
 
-    def rec_select_features(self, model, dataset_x, dataset_y, feature_set, ranks_raw,
+    def rec_select_features(self, model, dataset_name, dataset_x, dataset_y, feature_set, ranks_raw,
                             ad_type="SUP", metric="mcc", train_split=0.5, verbose=True):
         out_list = []
         f_to_remove = None
         best_pred = 0
+        pred_df = None
 
         for feature in feature_set:
 
@@ -332,9 +342,26 @@ class FrappeInstance:
                 f_to_remove = feature
 
             # Compute Ground Thruth
-            check_clf = DecisionTreeClassifier() if ad_type == "SUP" else COPOD(contamination=0.5)
-            truth_metrics = exercise_classifier(dataset_x[fs], dataset_y, check_clf,
-                                                train_split=train_split, verbose=False)
+            chk_classifiers = frappe_utils.get_fast_supervised_classifiers() \
+                if ad_type == "SUP" else frappe_utils.get_fast_unsupervised_classifiers(outliers_fraction=0.5)
+            metrics_df, truth_metrics = \
+                frappe_utils.compute_classification_score(dataset_name="dataset_tag",
+                                                          x=dataset_x[fs], y=dataset_y, metrics_df=None,
+                                                          classifiers=chk_classifiers,
+                                                          train_split=train_split, verbose=False)
+
+            # Create new entry in pred_df
+            if pred_df is None:
+                tag_list = ["dataset_name"] + [str(j) + "_" + str(i) for j in agg_dict for i in agg_dict[j]] + [k for k in truth_metrics]
+                pred_df = pandas.DataFrame(columns=tag_list)
+
+            full_name = dataset_name + "_" + str(len(fs)) + "_" + hashlib.md5(";".join(fs).encode('utf-8')).hexdigest()
+            pred_df.loc[len(pred_df), "dataset_name"] = full_name
+            for ranker in agg_dict:
+                for agg in agg_dict[ranker]:
+                    pred_df.loc[pred_df.dataset_name == full_name, ranker + "_" + agg] = agg_dict[ranker][agg]
+            for metric in truth_metrics:
+                pred_df.loc[pred_df.dataset_name == full_name, metric] = truth_metrics[metric]
 
             out_list.append({"features": fs, "pred": pred_metric, "true": truth_metrics[metric]})
             if verbose:
@@ -342,4 +369,4 @@ class FrappeInstance:
                       ", true_" + str(metric) + "=" + str(truth_metrics[metric]) +
                       " using the feature set of [" + ",".join([str(f) for f in fs]) + "]")
 
-        return out_list, best_pred, f_to_remove
+        return out_list, best_pred, f_to_remove, pred_df

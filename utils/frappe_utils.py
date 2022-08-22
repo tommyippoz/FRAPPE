@@ -19,6 +19,7 @@ from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from sklearn.feature_selection import SelectKBest, mutual_info_regression
 from sklearn.model_selection import cross_val_score, GridSearchCV
 from sklearn.naive_bayes import GaussianNB, BernoulliNB
+from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 
 USED_METRICS = ["tp", "tn", "fp", "fn", "accuracy", "precision", "recall", "f1", "f2", "auc", "mcc"]
@@ -51,9 +52,10 @@ def get_dataset_files(folder, partial_list=[]):
 
 def compute_classification_score(dataset_name, x, y,
                                  classifiers=[RandomForestClassifier(n_estimators=10)],
+                                 train_split=0.5,
                                  metrics_df=None,
                                  verbose=True):
-    metric_scores = classification_analysis(x, y, classifiers, verbose)
+    metric_scores = classification_analysis(x, y, classifiers, train_split, verbose)
     if not isinstance(metrics_df, pandas.DataFrame):
         tag_list = ["dataset_name"] + [k for k in metric_scores]
         metrics_df = pandas.DataFrame(columns=tag_list)
@@ -63,9 +65,9 @@ def compute_classification_score(dataset_name, x, y,
     return metrics_df, metric_scores
 
 
-def classification_analysis(x, y, classifiers, verbose=True):
+def classification_analysis(x, y, classifiers, train_split=0.5, verbose=True):
 
-    x_tr, x_te, y_tr, y_te = sklearn.model_selection.train_test_split(x, y, test_size=0.5)
+    x_tr, x_te, y_tr, y_te = sklearn.model_selection.train_test_split(x, y, test_size=1-train_split)
 
     best_result = [-1, []]
     for classifier in classifiers:
@@ -262,6 +264,13 @@ def get_supervised_classifiers():
             RandomForestClassifier(n_estimators=100)]
 
 
+def get_fast_supervised_classifiers():
+    return [GaussianNB(),
+            DecisionTreeClassifier(),
+            LinearDiscriminantAnalysis(),
+            RandomForestClassifier(n_estimators=10)]
+
+
 def get_unsupervised_classifiers(outliers_fraction):
     outliers_fraction = outliers_fraction if outliers_fraction < 0.5 else 0.5
     return [COPOD(contamination=outliers_fraction),
@@ -274,5 +283,13 @@ def get_unsupervised_classifiers(outliers_fraction):
                          param_grid={'n_bins': [5, 10, 20, 50, 100, 200], 'tol': [0.2, 0.5, 0.8]}),
             GridSearchCV(estimator=MCD(contamination=outliers_fraction), scoring='roc_auc',
                          param_grid={'support_fraction': [None, 0.1, 0.3, 0.5]}),
+            GridSearchCV(estimator=PCA(contamination=outliers_fraction), scoring='roc_auc',
+                         param_grid={'weighted': [False, True]})]
+
+
+def get_fast_unsupervised_classifiers(outliers_fraction):
+    outliers_fraction = outliers_fraction if outliers_fraction < 0.5 else 0.5
+    return [COPOD(contamination=outliers_fraction),
+            IForest(contamination=outliers_fraction),
             GridSearchCV(estimator=PCA(contamination=outliers_fraction), scoring='roc_auc',
                          param_grid={'weighted': [False, True]})]
