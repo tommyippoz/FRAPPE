@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
             dataset_tag = dataset_name + "@" + tag
 
-            pred_met, feature_data_time, reg_time, data_row = fr_obj.predict_metric(metric, AD_TYPE, x_data, y_data)
+            pred_met, feature_data_time, reg_time, data_row, metrics = fr_obj.predict_metric(metric, AD_TYPE, x_data, y_data)
 
             print("[" + dataset_tag + "] Predicted " + metric + ": " + str(pred_met) +
                                " time: [" + str(feature_data_time) + "; " + str(reg_time) + "]")

@@ -160,7 +160,7 @@ def load_binary_tabular_dataset(dataset_name, label_name, normal_tag="normal", l
 
     # Basic Pre-Processing
     normal_frame = df.loc[df[label_name] == "normal"]
-    print("Dataset '" + dataset_name + "' loaded: " + str(len(df.index)) + " items, " + str(len(normal_frame.index)) +
+    print("\nDataset '" + dataset_name + "' loaded: " + str(len(df.index)) + " items, " + str(len(normal_frame.index)) +
           " normal and 2 labels")
 
     # Train/Test Split of Classifiers

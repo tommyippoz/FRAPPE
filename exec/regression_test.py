@@ -42,7 +42,7 @@ if __name__ == '__main__':
 
                     dataset_tag = dataset_name + "@" + tag
 
-                    pred_met, feature_data_time, reg_time, data_row = frappe.predict_metric(metric, x, y)
+                    pred_met, feature_data_time, reg_time, data_row, metrics = frappe.predict_metric(metric, x, y)
 
                     true_met = ground_truth.loc[ground_truth['dataset_name'] == dataset_tag][metric].iloc[0]
 

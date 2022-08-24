@@ -28,6 +28,7 @@ if __name__ == '__main__':
                                                       dataset_x=x, dataset_y=y,
                                                       feature_names=feature_names,
                                                       max_drop=0.1,
+                                                      method="fast",
                                                       ad_type=AD_TYPE, metric=METRIC,
                                                       train_split=0.66, verbose=True)
 

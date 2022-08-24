@@ -7,6 +7,7 @@ from pyod.models.copod import COPOD
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeClassifier
+from tqdm import tqdm
 from xgboost import XGBRegressor
 
 import frappe.FrappeRanker as franker
@@ -144,7 +145,7 @@ class FrappeInstance:
 
     def compute_raw_dataset_ranks(self, dataset, label):
         ranks = {}
-        for calculator in self.calculators:
+        for calculator in tqdm(self.calculators, "Calculating Feature Rankings, it may take a while..."):
             try:
                 calc_rank = calculator.compute_rank(dataset, label)
             except Exception as e:
@@ -245,7 +246,8 @@ class FrappeInstance:
             write_dict(additional_dict, model_file.replace(".joblib", "_info.csv"),
                        "additional info for regressor in FRAPPE")
 
-    def predict_metric(self, metric, ad_type, x, y, compute_true="no", verbose=False):
+    def predict_metric(self, metric, ad_type, x, y, dataset_name=None,
+                       compute_true="no", agg_ranks=None, verbose=False):
 
         # Compute True Value
         if compute_true is not "no":
@@ -256,34 +258,29 @@ class FrappeInstance:
                 classifiers = frappe_utils.get_fast_supervised_classifiers() \
                     if ad_type == "SUP" else frappe_utils.get_fast_unsupervised_classifiers(outliers_fraction=0.5)
             metrics_df, m_scores = \
-                frappe_utils.compute_classification_score(dataset_name="dataset_tag",
-                                                          x=x, y=y, metrics_df=None,
-                                                          classifiers=classifiers)
-            true_metric = m_scores[metric]
+                frappe_utils.compute_classification_score(
+                    dataset_name="dataset_tag" if dataset_name is None else dataset_name,
+                    x=x, y=y, metrics_df=None, classifiers=classifiers, verbose=verbose)
         else:
-            true_metric = None
+            m_scores = None
 
-        # Predict Metric
+        # Compute Ranks
         start_ms = current_ms()
-        ranks_df = self.compute_ranks(dataset_x=x, dataset_y=y, verbose=verbose)
+        if agg_ranks is None:
+            ranks_df = self.compute_ranks(dataset_x=x, dataset_y=y, verbose=verbose)
+            data = ranks_df.to_numpy()[0, 1:]
+        else:
+            data = numpy.asarray(agg_ranks)
         middle_ms = current_ms()
+
+        # Predict using the Model
         model = self.regressors[ad_type][metric]
-        data = ranks_df.to_numpy()[0, 1:]
         pred_metric = model.predict(data.reshape(1, -1))[0]
 
-        return pred_metric, middle_ms - start_ms, current_ms() - middle_ms, data, true_metric
+        return pred_metric, middle_ms - start_ms, current_ms() - middle_ms, data, m_scores
 
     def select_features(self, dataset_name, dataset_x, dataset_y, feature_names, max_drop,
-                        ad_type="SUP", metric="mcc", train_split=0.5, verbose=False):
-
-        met_max, t1, t2, data_row, met_calc = self.predict_metric(metric, ad_type, dataset_x, dataset_y,
-                                                                  compute_true="fast", verbose=False)
-        met_threshold = met_max * (1 - max_drop)
-
-        if verbose:
-            print("Predicted value of " + str(metric) + " for " + str(ad_type) +
-                  " learning using all features is " + str(met_max) + ", calculated is " + str(met_calc))
-            print("Selection will stop once pred_" + str(metric) + " goes below " + str(met_threshold))
+                        ad_type="SUP", metric="mcc", compute_true=False, train_split=0.5, verbose=False):
 
         # Computing Ranks
         start_time = current_ms()
@@ -291,82 +288,119 @@ class FrappeInstance:
         if verbose:
             print("Ranks computed in " + str(current_ms() - start_time) + " seconds")
 
-        # Loading Model
-        model = self.regressors[ad_type][metric]
+        # Computing True / Pred values using all features (maximum classification performance)
+        agg_dict, agg_row = self.compute_raw_aggregation(ranks_raw)
+        pred_max, t1, t2, data_row, calc_metrics = self.predict_metric(metric, ad_type, dataset_x, dataset_y,
+                                                                       compute_true="fast" if compute_true else "no",
+                                                                       agg_ranks=agg_row, verbose=False)
+        met_threshold = pred_max * (1 - max_drop)
+        calc_max = calc_metrics[metric] if compute_true else None
+        if verbose:
+            print("Pred_" + str(metric) + "@" + str(ad_type) + " = " + str(pred_max))
+            if compute_true:
+                print("Calculated metric value is " + str(calc_max))
+            print("Selection will stop once pred_" + str(metric) + "@" + str(ad_type) + " < " + str(met_threshold))
 
         # Iterating through features
         overall_df = None
-        best_pred = met_threshold
+        pred_met = met_threshold
         current_feature_set = numpy.asarray(feature_names)
-        feature_sets_list = [{"features": current_feature_set, "pred": met_max, "true": met_calc}]
 
-        while (best_pred >= met_threshold) and len(current_feature_set) > 1:
+        while (pred_met >= met_threshold) and len(current_feature_set) > 1:
 
             if verbose:
                 print("Iteration using " + str(len(current_feature_set)) + " features")
 
-            out_list, best_pred, f_to_remove, pred_df = \
-                self.rec_select_features(model, dataset_name, dataset_x, dataset_y,
-                                         current_feature_set, ranks_raw, ad_type, metric, train_split)
-            feature_sets_list.extend(out_list)
-            if f_to_remove is not None:
-                current_feature_set = current_feature_set[current_feature_set != f_to_remove]
-            if overall_df is None:
-                overall_df = pred_df
-            else:
-                overall_df.append(pred_df)
+            selection_df = None
+            for feature in tqdm(current_feature_set, "Current Feature Set"):
+                # Computing prediction and updating results
+                selection_df, pm = self.analyze_feature_set(dataset_name, metric, ad_type, dataset_x, dataset_y,
+                                                            [feature], current_feature_set, ranks_raw,
+                                                            compute_true=compute_true,
+                                                            selection_df=selection_df, verbose=False)
 
-        print("Process ended selecting features " + ",".join(f for f in current_feature_set))
-        return feature_sets_list, overall_df
+            selection_df.sort_values(by=["pred_met"], ascending=True, inplace=True)
 
-    def rec_select_features(self, model, dataset_name, dataset_x, dataset_y, feature_set, ranks_raw,
-                            ad_type="SUP", metric="mcc", train_split=0.5, verbose=True):
-        out_list = []
-        f_to_remove = None
-        best_pred = 0
-        pred_df = None
+            remove_df = None
+            n_features_to_remove = None
+            iter_flag = True
+            while (n_features_to_remove is None or n_features_to_remove > 0) and iter_flag:
+                n_features_to_remove = int(len(current_feature_set) / 2) if n_features_to_remove is None \
+                    else int(n_features_to_remove / 2)
+                features_to_remove = selection_df["to_remove"][-n_features_to_remove:].tolist()
+                remove_df, pred_met = self.analyze_feature_set(dataset_name, metric, ad_type, dataset_x, dataset_y,
+                                                               features_to_remove, current_feature_set, ranks_raw,
+                                                               compute_true=compute_true,
+                                                               selection_df=remove_df, verbose=False)
+                if pred_met >= met_threshold:
+                    iter_flag = False
 
-        for feature in feature_set:
-
-            # Update feature set and ranks
-            fs = feature_set[feature_set != feature]
-            current_ranks = {}
-            for key in ranks_raw:
-                current_ranks[key] = ranks_raw[key].drop(labels=[feature])
-
-            # Compute Prediction
-            agg_dict, agg_row = self.compute_raw_aggregation(current_ranks)
-            pred_metric = model.predict(numpy.asarray(agg_row).reshape(1, -1))[0]
-            if best_pred < pred_metric:
-                best_pred = pred_metric
-                f_to_remove = feature
-
-            # Compute Ground Thruth
-            chk_classifiers = frappe_utils.get_fast_supervised_classifiers() \
-                if ad_type == "SUP" else frappe_utils.get_fast_unsupervised_classifiers(outliers_fraction=0.5)
-            metrics_df, truth_metrics = \
-                frappe_utils.compute_classification_score(dataset_name="dataset_tag",
-                                                          x=dataset_x[fs], y=dataset_y, metrics_df=None,
-                                                          classifiers=chk_classifiers,
-                                                          train_split=train_split, verbose=False)
-
-            # Create new entry in pred_df
-            if pred_df is None:
-                tag_list = ["dataset_name"] + [str(j) + "_" + str(i) for j in agg_dict for i in agg_dict[j]] + [k for k in truth_metrics]
-                pred_df = pandas.DataFrame(columns=tag_list)
-
-            full_name = dataset_name + "_" + str(len(fs)) + "_" + hashlib.md5(";".join(fs).encode('utf-8')).hexdigest()
-            pred_df.loc[len(pred_df), "dataset_name"] = full_name
-            for ranker in agg_dict:
-                for agg in agg_dict[ranker]:
-                    pred_df.loc[pred_df.dataset_name == full_name, ranker + "_" + agg] = agg_dict[ranker][agg]
-            for metric in truth_metrics:
-                pred_df.loc[pred_df.dataset_name == full_name, metric] = truth_metrics[metric]
-
-            out_list.append({"features": fs, "pred": pred_metric, "true": truth_metrics[metric]})
+            if n_features_to_remove > 0:
+                for f_remove in features_to_remove:
+                    current_feature_set = current_feature_set[current_feature_set != f_remove]
             if verbose:
-                print("pred_" + str(metric) + "=" + str(pred_metric) +
-                      ", true_" + str(metric) + "=" + str(truth_metrics[metric]) +
-                      " using the feature set of [" + ",".join([str(f) for f in fs]) + "]")
+                if n_features_to_remove > 0:
+                    print("Removing Features: [" + ", ".join(features_to_remove) + "]" +
+                          " pred_" + metric + "@" + ad_type + " = " + str(pred_met))
+                else:
+                    print("Cannot remove features without dropping performance, process is going to stop")
+                    break
 
-        return out_list, best_pred, f_to_remove, pred_df
+            if overall_df is None:
+                overall_df = pandas.concat([selection_df, remove_df])
+            else:
+                overall_df = pandas.concat([overall_df, selection_df, remove_df])
+
+        print("Selection process ended selecting " + str(len(current_feature_set)) + "/" + str(len(dataset_x.columns)) +
+              " features: [" + ",".join(f for f in current_feature_set) + "]")
+        print("pred_" + metric + "@" + ad_type + " becomes " + str(pred_met) + " instead of " + str(pred_max))
+        return overall_df, current_feature_set
+
+    def analyze_feature_set(self, dataset_name, metric, ad_type, dataset_x, dataset_y,
+                            features_to_remove, current_feature_set, ranks_raw,
+                            compute_true=False, selection_df=None, verbose=False):
+        # Update feature set and ranks
+        fs = current_feature_set
+        for f_remove in features_to_remove:
+            fs = fs[fs != f_remove]
+        current_ranks = {}
+        for key in ranks_raw:
+            current_ranks[key] = ranks_raw[key].drop(labels=features_to_remove)
+
+        # Computing Prediction
+        full_name = dataset_name + "_" + str(len(fs)) + "_" + hashlib.md5(";".join(fs).encode('utf-8')).hexdigest()
+        agg_dict, agg_row = self.compute_raw_aggregation(current_ranks)
+        pred_met, t1, t2, data_row, calc_metrics = self.predict_metric(metric, ad_type, dataset_x[fs], dataset_y,
+                                                                       dataset_name=full_name,
+                                                                       compute_true="fast" if compute_true else "no",
+                                                                       agg_ranks=agg_row, verbose=verbose)
+        # Writing output
+        selection_df = self.update_selection_df(pred_met, full_name, features_to_remove, fs, calc_metrics, agg_dict,
+                                                selection_df)
+        return selection_df, pred_met
+
+    def update_selection_df(self, pred_met, dataset_name, to_remove, feature_set, truth_metrics, agg_ranks,
+                            selection_df=None):
+
+        if selection_df is None:
+            # Create new Dataframe selection_df
+            tag_list = ["dataset_name", "features", "n_features", "to_remove", "pred_met"] + \
+                       [str(j) + "_" + str(i) for j in agg_ranks for i in agg_ranks[j]]
+            if truth_metrics is not None:
+                tag_list = tag_list + [k for k in truth_metrics]
+            selection_df = pandas.DataFrame(columns=tag_list)
+
+        # Create new entry in selection_df
+        selection_df.loc[len(selection_df), "dataset_name"] = dataset_name
+        selection_df.loc[selection_df.dataset_name == dataset_name, "features"] = ";".join(feature_set)
+        selection_df.loc[selection_df.dataset_name == dataset_name, "n_features"] = len(feature_set)
+        selection_df.loc[selection_df.dataset_name == dataset_name, "to_remove"] = ";".join(to_remove)
+        selection_df.loc[selection_df.dataset_name == dataset_name, "pred_met"] = pred_met
+        for ranker in agg_ranks:
+            for agg in agg_ranks[ranker]:
+                selection_df.loc[selection_df.dataset_name == dataset_name, ranker + "_" + agg] = agg_ranks[ranker][agg]
+        if truth_metrics is not None:
+            for metric in truth_metrics:
+                selection_df.loc[selection_df.dataset_name == dataset_name, metric] = truth_metrics[metric]
+
+        return selection_df

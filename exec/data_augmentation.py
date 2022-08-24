@@ -8,9 +8,9 @@ from utils import frappe_utils
 from utils.dataset_utils import load_binary_tabular_dataset
 
 MODELS_FOLDER = "../models"
-DATASET_FOLDER = "../input_folder/Biometry_Datasets/"
+DATASET_FOLDER = "../input_folder/NIDS/"
 OUTPUT_FOLDER = "../output_folder"
-AD_TYPE = "UNS"
+AD_TYPE = "SUP"
 METRIC = "mcc"
 
 if __name__ == '__main__':
@@ -21,21 +21,26 @@ if __name__ == '__main__':
         os.mkdir(OUTPUT_FOLDER)
 
     dataset_files = frappe_utils.get_dataset_files(DATASET_FOLDER)
+    dataaug_file = OUTPUT_FOLDER + "/" + AD_TYPE + "_dataaug_ids.csv"
 
     for dataset_file in dataset_files:
 
         [x, y, feature_names, label_names, an_perc, tag] = \
-            load_binary_tabular_dataset(dataset_file, label_name="multilabel", limit=numpy.NaN)
+            load_binary_tabular_dataset(dataset_file, label_name="multilabel", limit=100000)
         dataset_name = os.path.basename(dataset_file).replace(".csv", "").split("/")[-1]
 
-        print("\nSelecting features of dataset " + dataset_name)
+        print("Selecting features of dataset " + dataset_name)
 
         # Selecting minimum amount of features
-        feature_list, overall_df = fr_obj.select_features(dataset_name=dataset_name,
+        overall_df, feature_list = fr_obj.select_features(dataset_name=dataset_name,
                                                           dataset_x=x, dataset_y=y,
                                                           feature_names=feature_names,
-                                                          max_drop=0.1,
+                                                          max_drop=0.4,
+                                                          compute_true=True,
                                                           ad_type=AD_TYPE, metric=METRIC,
                                                           train_split=0.66, verbose=True)
 
-        overall_df.to_csv(OUTPUT_FOLDER + "/" + AD_TYPE + "_dataaug.csv", index=False)
+        if not os.path.exists(dataaug_file):
+            overall_df.to_csv(dataaug_file, index=False)
+        else:
+            overall_df.to_csv(dataaug_file, index=False, mode='a', header=False)
