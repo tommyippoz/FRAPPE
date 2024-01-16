@@ -1,0 +1,9 @@
+additional info for regressor in FRAPPE
+model_name,RandomForestRegressor
+mae,exp_var,0.8107695859759806
+mae,max_err,0.5120084289100002
+mae,mean_abs_err,0.07903591006862068
+mae,mean_sq_err,0.015492265623343084
+mae,r2,0.8106209658450547
+mae,calculators,7
+mae,aggregators,6

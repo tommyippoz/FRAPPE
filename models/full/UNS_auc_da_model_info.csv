@@ -1,0 +1,9 @@
+additional info for regressor in FRAPPE
+model_name,GradientBoostingRegressor
+mae,exp_var,0.7440244802074227
+mae,max_err,0.4450226697446529
+mae,mean_abs_err,0.06429275926152773
+mae,mean_sq_err,0.01049912235311831
+mae,r2,0.7439700808807359
+mae,calculators,14
+mae,aggregators,6

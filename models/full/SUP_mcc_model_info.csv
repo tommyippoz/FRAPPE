@@ -1,0 +1,9 @@
+additional info for regressor in FRAPPE
+model_name,ExtraTreesRegressor
+mae,exp_var,0.8324661444977699
+mae,max_err,0.6622952484499999
+mae,mean_abs_err,0.09536506331068963
+mae,mean_sq_err,0.019397893277355475
+mae,r2,0.8323161095755549
+mae,calculators,14
+mae,aggregators,6
