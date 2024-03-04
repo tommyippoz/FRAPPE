@@ -1,59 +1,57 @@
 import os
 
-import pandas
-from frappe.FrappeInstance import FrappeInstance
+import numpy
+from joblib import load
 from tqdm import tqdm
-from utils import frappe_utils
-from utils.dataset_utils import load_binary_tabular_dataset_array_partition
 
-MODELS_FOLDER = "models"
-TEST_INPUT_FOLDER = "novel_datasets_featureselection"
-OUTPUT_FOLDER = "output_folder"
+from src import frappe_utils
+from src.FrappeInstance import FrappeInstance
+from src.FrappeType import FrappeType
+from src.dataset_utils import load_tabular_dataset, \
+    load_binary_tabular_dataset
 
-TRUTH_FILES = [["SUP", "input_reg/20220309_SupervisedCorrelation_Wrap50.csv"]]  # ,
-# ["UNSUP", "input_reg/20220309_UnsupervisedCorrelation_Wrap50.csv"]]
+MODELS_FOLDER = "../models"
+TEST_INPUT_FOLDER = "../input/test"
+OUTPUT_FOLDER = "../output_folder"
 
 
 if __name__ == '__main__':
 
-    with open(OUTPUT_FOLDER + "/timings_prediction.csv", 'w') as f:
-        f.write("dataset_tag,desc,metric,predicted,true,mae,time_fd,time_reg,data_row\n")
-
-    frappe = FrappeInstance(load_models=True)
+    with open(OUTPUT_FOLDER + "/prediction_tests_fast.csv", 'w') as f:
+        f.write("dataset_tag,task,metric,predicted,true,mae,time_fd,time_reg,test_size,n_features,n_classes,data_row\n")
 
     dataset_files = frappe_utils.get_dataset_files(TEST_INPUT_FOLDER)
 
-    for metric in ["mcc", "auc"]:
+    for file_name in tqdm(dataset_files, desc="Datasets Progress"):
 
-        for desc, path in TRUTH_FILES:
+        dataset_name = os.path.basename(file_name).replace(".csv", "")
+        print("\n------------------------------------------------------\n")
+        print(dataset_name + "\n")
 
-            ground_truth = pandas.read_csv(path, sep=",")
+        for task in ["bin-sup", "bin-uns", "multi"]:
 
-            for file_name in tqdm(dataset_files, desc="Datasets Progress"):
+            for metric in ["mcc", "auc"]:
 
-                print("\n------------------------------------------------------\n")
+                if "bin-" in task:
+                    [x, y, labels, feature_list, an_perc, tag] = \
+                        load_binary_tabular_dataset(file_name, label_name="multilabel")
+                else:
+                    x, y, labels, feature_list = load_tabular_dataset(file_name, label_name="multilabel")
 
-                dataset_array = load_binary_tabular_dataset_array_partition(file_name, label_name="multilabel",
-                                                                            n_partitions=5)
-                dataset_name = os.path.basename(file_name).replace(".csv", "")
+                fr_obj = FrappeInstance(classification_type=task, target_metric=metric,
+                                        instance=FrappeType.FAST, models_folder=MODELS_FOLDER)
 
-                for [x, y, feature_names, label_names, an_perc, tag] in tqdm(dataset_array, desc="Variants Progress"):
-                    print("\nPredicting tag " + tag + " of dataset " + dataset_name)
+                pred_met, feature_data_time, reg_time, data_row, true_mets = \
+                    fr_obj.predict_metric(x, y, dataset_name, compute_true=True)
 
-                    dataset_tag = dataset_name + "@" + tag
+                print("[" + task + "@" + metric + "] Predicted: " + str(pred_met) + " was " + str(true_mets[metric])
+                      + " ae of " + str(abs(pred_met - true_mets[metric])) +
+                      " time: [" + str(feature_data_time) + "; " + str(reg_time) + "]")
 
-                    pred_met, feature_data_time, reg_time, data_row, metrics = frappe.predict_metric(metric, x, y)
-
-                    true_met = ground_truth.loc[ground_truth['dataset_name'] == dataset_tag][metric].iloc[0]
-
-                    print("[" + desc + "] Predicted " + metric + ": " + str(pred_met) + " was " + str(true_met)
-                          + " mae of " + str(abs(pred_met - true_met)) +
-                          " time: [" + str(feature_data_time) + "; " + str(reg_time) + "]")
-
-                    with open(OUTPUT_FOLDER + "/timings_prediction.csv", 'a') as f:
-                        # create the csv writer
-                        f.write(dataset_tag + "," + desc + "," + metric + "," + str(pred_met) + "," +
-                                str(true_met) + "," + str(abs(pred_met - true_met)) + "," +
-                                str(feature_data_time) + "," + str(reg_time) + "," +
-                                str(len(y)) + "," + str(x.shape[1]) + ","
-                                                                      ','.join(map(str, data_row)) + "\n")
+                with open(OUTPUT_FOLDER + "/prediction_tests_fast.csv", 'a') as f:
+                    # create the csv writer
+                    f.write(dataset_name + "," + task + "," + metric + "," + str(pred_met) + "," +
+                            str(true_mets[metric]) + "," + str(abs(pred_met - true_mets[metric])) + "," +
+                            str(feature_data_time) + "," + str(reg_time) + "," +
+                            str(len(y)) + "," + str(x.shape[1]) + "," + str(len(numpy.unique(labels))) + "," +
+                            ','.join(map(str, data_row)) + "\n")

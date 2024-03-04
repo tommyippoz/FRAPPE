@@ -3,11 +3,10 @@ import os
 import pandas
 from tqdm import tqdm
 
-from src.FrappeInstance import FrappeInstance
+from src.FrappeInstance import FrappeInstance, get_unsupervised_classifiers, get_supervised_classifiers
 from src.FrappeType import FrappeType
 from src.dataset_utils import load_binary_tabular_dataset_array_partition
-from src.frappe_utils import get_dataset_files, compute_classification_score, get_supervised_classifiers, \
-    get_unsupervised_classifiers
+from src.frappe_utils import get_dataset_files, compute_classification_score
 
 MODELS_FOLDER = "../models"
 INPUT_FOLDER = "../input"
@@ -57,10 +56,10 @@ def build_ranks_scores():
             try:
 
                 sup_metrics_df, m_scores = compute_classification_score(dataset_name=dataset_tag,
-                                                                                     x=x,
-                                                                                     y=y,
-                                                                                     metrics_df=sup_metrics_df,
-                                                                                     classifiers=get_supervised_classifiers())
+                                                                        x=x,
+                                                                        y=y,
+                                                                        metrics_df=sup_metrics_df,
+                                                                        classifiers=get_supervised_classifiers())
             except:
                 print("Cannot compute classification metrics")
 
@@ -84,11 +83,11 @@ def build_ranks_scores():
             try:
 
                 uns_metrics_df, m_scores = compute_classification_score(dataset_name=dataset_tag,
-                                                                                     x=x,
-                                                                                     y=y,
-                                                                                     metrics_df=uns_metrics_df,
-                                                                                     classifiers=get_unsupervised_classifiers(
-                                                                                         outliers_fraction=an_perc))
+                                                                        x=x,
+                                                                        y=y,
+                                                                        metrics_df=uns_metrics_df,
+                                                                        classifiers=get_unsupervised_classifiers(
+                                                                            outliers_fraction=an_perc))
             except:
                 print("Cannot compute classification metrics")
 
@@ -105,8 +104,6 @@ def build_ranks_scores():
 
 if __name__ == '__main__':
 
-    fr_obj = FrappeInstance(load_models=False, instance=FrappeType.FULL, models_folder=MODELS_FOLDER)
-
     if not os.path.exists(OUTPUT_FOLDER):
         os.mkdir(OUTPUT_FOLDER)
 
@@ -122,13 +119,18 @@ if __name__ == '__main__':
     if os.path.exists(uns_ranks_file):
         uns_ranks = pandas.read_csv(uns_ranks_file)
 
-    if uns_ranks is None or sup_ranks is None:
-        sup_ranks, uns_ranks = build_ranks_scores()
+    # Multi Ranks
+    multi_ranks = None
+    multi_ranks_file = OUTPUT_FOLDER + "/multi_calc_sup.csv"
+    if os.path.exists(uns_ranks_file):
+        multi_ranks = pandas.read_csv(multi_ranks_file)
 
-    # Learning Models for SUPERVISED
-    fr_obj.learn_models(sup_ranks, ad_type="SUP", train_split=0.8,
-                        select_features=None, verbose=True)
+    matrix = [{'task': 'bin-sup', 'df': sup_ranks},
+              {'task': 'bin-uns', 'df': uns_ranks},
+              {'task': 'multi', 'df': multi_ranks}]
 
-    # Learning Models for UNSUPERVISED
-    fr_obj.learn_models(uns_ranks, ad_type="UNS", train_split=0.8,
-                        select_features=None, verbose=True)
+    for item in matrix:
+        for metric in ['mcc', 'auc']:
+            fr_obj = FrappeInstance(classification_type=item['task'], target_metric=metric,
+                                    instance=FrappeType.FAST, models_folder=MODELS_FOLDER)
+            fr_obj.learn_models(item['df'], train_split=0.95, select_features=None, verbose=True)
